@@ -1,7 +1,7 @@
 {
-  "name": "starter-app",
+  "name": "ai-auto-trading",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lightweight-charts": "^4.2.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

@@ -1,36 +1,40 @@
-import { useState } from 'react'
-import './App.css'
+import { useState, useCallback } from 'react';
+import { Header }       from './components/Header.jsx';
+import { StockScanner } from './components/StockScanner.jsx';
+import './App.css';
+
+// Scanner exposes scan control via an event bus pattern
+let triggerScan = null;
+export const registerScanTrigger = (fn) => { triggerScan = fn; };
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [scanning,    setScanning]    = useState(false);
+  const [lastScan,    setLastScan]    = useState(null);
+  const [signalCount, setSignalCount] = useState(0);
+
+  const handleScanRequest = useCallback(() => {
+    if (triggerScan) triggerScan();
+  }, []);
 
   return (
-    <main className="app">
-      <div className="card">
-        <h1>starter-app</h1>
-        <p className="subtitle">Vite + React is running. 🎉</p>
-
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((c) => c + 1)}
-        >
-          Tapped {count} {count === 1 ? 'time' : 'times'}
-        </button>
-
-        <button
-          type="button"
-          className="reset"
-          onClick={() => setCount(0)}
-          disabled={count === 0}
-        >
-          Reset
-        </button>
-
-        <p className="hint">Tap the button to confirm it works on your phone.</p>
-      </div>
-    </main>
-  )
+    <div className="app-root">
+      <Header
+        signalCount={signalCount}
+        lastScan={lastScan}
+        scanning={scanning}
+        onScan={handleScanRequest}
+      />
+      <StockScanner
+        onScanStart={() => setScanning(true)}
+        onScanEnd={(sigs, time) => {
+          setScanning(false);
+          setLastScan(time);
+          setSignalCount(sigs);
+        }}
+        registerTrigger={registerScanTrigger}
+      />
+    </div>
+  );
 }
 
-export default App
+export default App;
