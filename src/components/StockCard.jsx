@@ -1,89 +1,122 @@
-import { fmtPrice, fmtPct } from '../utils/formatters.js';
+import { fmtPrice, fmtPct, timeAgo } from '../utils/formatters.js';
 
-function ConfidenceBadge({ value }) {
-  const color = value >= 97 ? '#ff6b35' : value >= 95 ? '#f59e0b' : '#10b981';
-  return (
-    <div className="confidence-badge" style={{ '--conf-color': color }}>
-      <svg viewBox="0 0 36 36" className="conf-ring">
-        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#1f2937" strokeWidth="3" />
-        <circle
-          cx="18" cy="18" r="15.9" fill="none"
-          stroke={color} strokeWidth="3"
-          strokeDasharray={`${value} ${100 - value}`}
-          strokeDashoffset="25"
-          strokeLinecap="round"
-        />
-      </svg>
-      <span className="conf-value">{value}%</span>
-    </div>
-  );
-}
+const TIER_META = {
+  ELITE:  { bg: 'var(--elite-bg)',  border: 'var(--elite-border)',  accent: 'var(--elite-color)',  icon: '🔥' },
+  HIGH:   { bg: 'var(--high-bg)',   border: 'var(--high-border)',   accent: 'var(--high-color)',   icon: '⚡' },
+  STRONG: { bg: 'var(--strong-bg)', border: 'var(--strong-border)', accent: 'var(--strong-color)', icon: '✓'  },
+};
 
 function RRBar({ ratio }) {
   const pct = Math.min((ratio / 5) * 100, 100);
   return (
-    <div className="rr-bar-wrap">
-      <div className="rr-bar">
-        <div className="rr-fill" style={{ width: `${pct}%` }} />
+    <div className="rr-row">
+      <span className="rr-label-sm">Risk:Reward</span>
+      <div className="rr-track">
+        <div className="rr-bar" style={{ width: `${pct}%` }} />
       </div>
-      <span className="rr-label">1:{ratio.toFixed(1)}</span>
+      <span className="rr-value">1 : {ratio.toFixed(1)}</span>
     </div>
   );
 }
 
-export function StockCard({ signal, quote, onOpen }) {
-  const up = (quote?.changePct ?? 0) >= 0;
-  const riskPct = ((signal.risk / signal.entryPrice) * 100).toFixed(1);
-  const rewardPct = ((signal.reward / signal.entryPrice) * 100).toFixed(1);
+export function StockCard({ signal, quote, isFavorite, onOpen, onToggleFavorite }) {
+  const tier = TIER_META[signal.tier] ?? TIER_META.STRONG;
+  const up   = (quote?.changePct ?? 0) >= 0;
+
+  const riskPct   = ((signal.risk   / signal.entryPrice) * 100).toFixed(2);
+  const rewardPct = ((signal.reward / signal.entryPrice) * 100).toFixed(2);
+
+  const handleFav = (e) => {
+    e.stopPropagation();
+    onToggleFavorite?.(signal.symbol);
+  };
 
   return (
-    <div className="stock-card" onClick={onOpen}>
-      <div className="card-top">
-        <div className="card-symbol-block">
-          <span className="card-symbol">{signal.symbol}</span>
-          <span className="card-name">{quote?.name ?? signal.symbol}</span>
+    <article
+      className={`stock-card ${signal.isDemo ? 'demo-card' : ''}`}
+      style={{
+        background:   tier.bg,
+        borderColor:  tier.border,
+        '--tier-accent': tier.accent,
+      }}
+      onClick={onOpen}
+    >
+      {signal.isDemo && <div className="demo-ribbon">DEMO</div>}
+
+      {/* Top row */}
+      <div className="sc-top">
+        <div className="sc-identity">
+          <div className="sc-symbol-row">
+            <span className="sc-symbol">{signal.symbol}</span>
+            <span className="sc-market-badge">{signal.market}</span>
+            {signal.isDemo && <span className="sc-demo-badge">Test Signal</span>}
+          </div>
+          <span className="sc-name">{quote?.name ?? signal.name ?? signal.symbol}</span>
         </div>
-        <ConfidenceBadge value={signal.confidence} />
+
+        <div className="sc-conf-block" style={{ color: tier.accent }}>
+          <span className="sc-tier-icon">{tier.icon}</span>
+          <span className="sc-conf-pct">{signal.confidence}%</span>
+          <span className="sc-tier-label">{signal.tier}</span>
+        </div>
       </div>
 
-      <div className="card-price-row">
-        <span className="card-price">{fmtPrice(signal.entryPrice)}</span>
-        <span className={`card-change ${up ? 'green' : 'red'}`}>
-          {fmtPct(quote?.changePct)}
+      {/* Price row */}
+      <div className="sc-price-row">
+        <span className="sc-price">{fmtPrice(signal.entryPrice)}</span>
+        <span className={`sc-change ${up ? 'up' : 'down'}`}>
+          {up ? '▲' : '▼'} {fmtPct(quote?.changePct)}
         </span>
+        <span className="sc-age">{timeAgo(signal.timestamp)}</span>
       </div>
 
-      <div className="card-patterns">
-        {signal.patterns.slice(0, 2).map(p => (
-          <span key={p} className="pattern-tag">{p}</span>
+      {/* Patterns */}
+      <div className="sc-patterns">
+        {signal.patterns.slice(0, 3).map(p => (
+          <span key={p} className="sc-pattern-tag">{p}</span>
         ))}
       </div>
 
-      <div className="card-levels">
-        <div className="level entry">
-          <span className="level-label">Entry</span>
-          <span className="level-value blue">{fmtPrice(signal.entryPrice)}</span>
+      <div className="sc-divider" />
+
+      {/* Levels */}
+      <div className="sc-levels">
+        <div className="sc-level">
+          <span className="lvl-label">Entry</span>
+          <span className="lvl-val entry-val">{fmtPrice(signal.entryPrice)}</span>
         </div>
-        <div className="level stop">
-          <span className="level-label">Stop</span>
-          <span className="level-value red">{fmtPrice(signal.stopLoss)}</span>
-          <span className="level-pct red">−{riskPct}%</span>
+        <div className="sc-level">
+          <span className="lvl-label">Stop Loss</span>
+          <span className="lvl-val stop-val">{fmtPrice(signal.stopLoss)}</span>
+          <span className="lvl-sub red">−{riskPct}%</span>
         </div>
-        <div className="level target">
-          <span className="level-label">Target</span>
-          <span className="level-value green">{fmtPrice(signal.target)}</span>
-          <span className="level-pct green">+{rewardPct}%</span>
+        <div className="sc-level">
+          <span className="lvl-label">Target</span>
+          <span className="lvl-val target-val">{fmtPrice(signal.target)}</span>
+          <span className="lvl-sub green">+{rewardPct}%</span>
         </div>
       </div>
 
-      <div className="card-rr">
-        <span className="rr-title">Risk / Reward</span>
-        <RRBar ratio={signal.rrRatio} />
+      {/* Indicators */}
+      <div className="sc-indicators">
+        {signal.technicalSignals.slice(0, 3).map(s => (
+          <span key={s} className="sc-ind-tag">{s}</span>
+        ))}
       </div>
 
-      <button className="view-chart-btn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
-        View Chart & Analysis →
-      </button>
-    </div>
+      <RRBar ratio={signal.rrRatio} />
+
+      {/* Actions */}
+      <div className="sc-actions">
+        <button className={`fav-btn ${isFavorite ? 'active' : ''}`} onClick={handleFav}
+          title={isFavorite ? 'Remove from favourites' : 'Save to favourites'}>
+          {isFavorite ? '★' : '☆'}
+          {isFavorite ? 'Saved' : 'Save'}
+        </button>
+        <button className="chart-btn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+          View Chart &amp; Analysis →
+        </button>
+      </div>
+    </article>
   );
 }
