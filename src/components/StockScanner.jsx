@@ -9,7 +9,7 @@ import { fetchBatchQuotes, fetchCandles } from '../services/stockService.js';
 import { generateSignal }     from '../services/signalService.js';
 
 const RESCAN_MS   = 5 * 60 * 1000;
-const CONCURRENCY = 4;
+const CONCURRENCY = 8;
 
 async function pooledMap(items, fn, concurrency) {
   const queue = [...items];
@@ -98,12 +98,15 @@ export function StockScanner({
               const enriched = { ...sig, name: stock.name };
               found.push(enriched);
               addToHistory?.(enriched);
+              // atomic snapshot to avoid race between 8 concurrent workers
+              const snapshot = found.slice().sort((a, b) => b.confidence - a.confidence);
+              setSignals(snapshot);
             }
           }
         } finally {
           done++;
           setProgress(25 + Math.round((done / total) * 72));
-          setProgLabel(`${stock.symbol} (${done}/${total})`);
+          setProgLabel(`Scanning ${stock.symbol}… (${done}/${total})`);
         }
       }, CONCURRENCY);
 
@@ -122,11 +125,31 @@ export function StockScanner({
   }, [onScanStart, onScanEnd, addToHistory]);
 
   useEffect(() => { registerTrigger?.(runScan); }, [registerTrigger, runScan]);
+
+  // Initial scan + auto-rescan timer
   useEffect(() => {
     runScan();
     const id = setInterval(runScan, RESCAN_MS);
     return () => clearInterval(id);
   }, []); // eslint-disable-line
+
+  // Re-scan when timeframe or markets change (clear stale results first)
+  const prevTimeframeRef = useRef(timeframe);
+  useEffect(() => {
+    if (prevTimeframeRef.current === timeframe) return;
+    prevTimeframeRef.current = timeframe;
+    setSignals([]);
+    runScan();
+  }, [timeframe, runScan]);
+
+  const prevMarketsRef = useRef(activeMarkets.join(','));
+  useEffect(() => {
+    const key = activeMarkets.join(',');
+    if (prevMarketsRef.current === key) return;
+    prevMarketsRef.current = key;
+    setSignals([]);
+    runScan();
+  }, [activeMarkets, runScan]);
 
   const visible = signals
     .filter(s =>

@@ -14,10 +14,12 @@ function useLocalStorage(key, init) {
     catch { return init; }
   });
   const set = useCallback((v) => {
-    const next = typeof v === 'function' ? v(val) : v;
-    setVal(next);
-    try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
-  }, [key, val]);
+    setVal(prev => {
+      const next = typeof v === 'function' ? v(prev) : v;
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [key]);
   return [val, set];
 }
 
@@ -27,10 +29,12 @@ function useSessionStorage(key, init) {
     catch { return init; }
   });
   const set = useCallback((v) => {
-    const next = typeof v === 'function' ? v(val) : v;
-    setVal(next);
-    try { sessionStorage.setItem(key, JSON.stringify(next)); } catch {}
-  }, [key, val]);
+    setVal(prev => {
+      const next = typeof v === 'function' ? v(prev) : v;
+      try { sessionStorage.setItem(key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [key]);
   return [val, set];
 }
 
@@ -51,7 +55,7 @@ export default function App() {
   const [sidebarOpen,    setSidebarOpen]   = useState(window.innerWidth >= 1024);
   const [searchOpen,     setSearchOpen]    = useState(false);
   const [activeMarkets,  setActiveMarkets] = useState(['NASDAQ']);
-  const [confidenceMin,  setConfidenceMin] = useState(90);
+  const [confidenceMin,  setConfidenceMin] = useState(80);
   const [timeframe,      setTimeframe]     = useState('intraday');
   const [maxPrice,       setMaxPrice]      = useState(Infinity);
   const [favorites,      setFavorites]     = useLocalStorage('ats-favorites', []);

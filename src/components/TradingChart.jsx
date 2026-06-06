@@ -1,90 +1,113 @@
 import { useEffect, useRef } from 'react';
 import { createChart, LineStyle, CrosshairMode } from 'lightweight-charts';
 
+// Forecast steps in seconds per timeframe
+const FORECAST_STEPS = {
+  intraday: [900, 1800, 3600, 5400],    // 15m, 30m, 1h, 1.5h
+  swing:    [86400, 172800, 345600, 518400], // 1d, 2d, 4d, 6d
+  longterm: [604800, 1209600, 2419200, 3628800], // 1w, 2w, 4w, 6w
+};
+
 export function TradingChart({ candles, signal }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
     if (!containerRef.current || !candles?.length) return;
 
-    const chart = createChart(containerRef.current, {
+    const el = containerRef.current;
+    const w  = el.clientWidth  || 600;
+    const h  = el.clientHeight || 320;
+
+    const chart = createChart(el, {
+      width:  w,
+      height: h,
       layout: {
-        background: { color: '#ffffff' },
-        textColor:  '#475569',
-        fontFamily: 'system-ui, sans-serif',
-        fontSize:   12,
+        background:  { color: '#131d30' },
+        textColor:   '#7f8ea3',
+        fontFamily:  'system-ui, sans-serif',
+        fontSize:    12,
       },
       grid: {
-        vertLines: { color: '#f1f5f9' },
-        horzLines: { color: '#f1f5f9' },
+        vertLines: { color: '#1a2640' },
+        horzLines: { color: '#1a2640' },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#e2e8f0' },
+      rightPriceScale: { borderColor: '#1a2640' },
       timeScale: {
-        borderColor: '#e2e8f0',
-        timeVisible: true,
+        borderColor:    '#1a2640',
+        timeVisible:    true,
         secondsVisible: false,
-        fixLeftEdge: true,
+        fixLeftEdge:    true,
       },
       handleScroll: true,
       handleScale:  true,
     });
 
     const ro = new ResizeObserver(() => {
-      chart.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+      if (!el) return;
+      chart.resize(el.clientWidth, el.clientHeight);
     });
-    ro.observe(containerRef.current);
+    ro.observe(el);
 
-    // Candles
+    // Candlestick series
     const cs = chart.addCandlestickSeries({
-      upColor: '#059669', downColor: '#dc2626',
-      borderUpColor: '#059669', borderDownColor: '#dc2626',
-      wickUpColor: '#34d399', wickDownColor: '#f87171',
+      upColor:        '#22c55e', downColor:       '#ef4444',
+      borderUpColor:  '#22c55e', borderDownColor: '#ef4444',
+      wickUpColor:    '#4ade80', wickDownColor:   '#f87171',
     });
+
     const formatted = candles.map(c => ({
-      time: Math.floor(c.time / 1000),
-      open: c.open, high: c.high, low: c.low, close: c.close,
+      time:  Math.floor(c.time / 1000),
+      open:  c.open, high: c.high, low: c.low, close: c.close,
     }));
     cs.setData(formatted);
 
-    // Volume bars
+    // Volume series
     const vol = chart.addHistogramSeries({
-      priceFormat: { type: 'volume' }, priceScaleId: 'vol',
+      priceFormat:  { type: 'volume' },
+      priceScaleId: 'vol',
     });
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.83, bottom: 0 } });
     vol.setData(candles.map(c => ({
       time:  Math.floor(c.time / 1000),
       value: c.volume,
-      color: c.close >= c.open ? '#05966922' : '#dc262622',
+      color: c.close >= c.open ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)',
     })));
 
-    const lastTime = formatted[formatted.length - 1].time;
+    // Signal price lines + forecast
+    if (signal && signal.entryPrice > 0) {
+      cs.createPriceLine({ price: signal.entryPrice, color: '#3b82f6', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Entry' });
+      cs.createPriceLine({ price: signal.stopLoss,   color: '#ef4444', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Stop'  });
+      cs.createPriceLine({ price: signal.target,     color: '#22c55e', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Target' });
 
-    if (signal) {
-      cs.createPriceLine({ price: signal.entryPrice, color: '#2563eb', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Entry' });
-      cs.createPriceLine({ price: signal.stopLoss,   color: '#dc2626', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Stop' });
-      cs.createPriceLine({ price: signal.target,     color: '#059669', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Target' });
+      const lastTime = formatted[formatted.length - 1].time;
+      const last     = formatted[formatted.length - 1].close;
+      const diff     = signal.target - last;
 
+      // Forecast line — offsets scale with timeframe
+      const steps = FORECAST_STEPS[signal.timeframe] ?? FORECAST_STEPS.intraday;
+      const [T1, T2, T3, T4] = steps.map(s => lastTime + s);
       const fcast = chart.addLineSeries({
-        color: '#d97706', lineWidth: 2, lineStyle: LineStyle.SparseDotted,
+        color: '#f59e0b', lineWidth: 2, lineStyle: LineStyle.SparseDotted,
         lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
       });
-      const last = formatted[formatted.length - 1].close;
-      const diff = signal.target - last;
-      const T15 = lastTime + 900, T30 = lastTime + 1800, T60 = lastTime + 3600, T90 = lastTime + 5400;
       fcast.setData([
         { time: lastTime, value: last },
-        { time: T15, value: last + diff * 0.2 },
-        { time: T30, value: last + diff * 0.45 },
-        { time: T60, value: last + diff * 0.75 },
-        { time: T90, value: last + diff * 0.95 },
+        { time: T1, value: last + diff * 0.2  },
+        { time: T2, value: last + diff * 0.45 },
+        { time: T3, value: last + diff * 0.75 },
+        { time: T4, value: last + diff * 0.95 },
       ]);
 
       // Confidence envelope
       const spread = signal.risk * 0.4;
-      [[last + spread*.2, last + diff*.95 + spread], [last - spread*.2, last + diff*.95 - spread]].forEach(([s, e]) => {
-        const env = chart.addLineSeries({ color: '#d9780633', lineWidth: 1, lineStyle: LineStyle.Dotted, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false });
-        env.setData([{ time: lastTime, value: s }, { time: T90, value: e }]);
+      [[last + spread * 0.2, last + diff * 0.95 + spread],
+       [last - spread * 0.2, last + diff * 0.95 - spread]].forEach(([s, e]) => {
+        const env = chart.addLineSeries({
+          color: 'rgba(245,158,11,0.25)', lineWidth: 1, lineStyle: LineStyle.Dotted,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+        });
+        env.setData([{ time: lastTime, value: s }, { time: T4, value: e }]);
       });
     }
 
@@ -95,8 +118,8 @@ export function TradingChart({ candles, signal }) {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {signal && (
-        <div className="chart-legend-light">
+      {signal && signal.entryPrice > 0 && (
+        <div className="chart-legend">
           <span className="cl-item blue">— Entry</span>
           <span className="cl-item red">— Stop</span>
           <span className="cl-item green">— Target</span>

@@ -2,25 +2,33 @@
 const PROXIES = [
   url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
 ];
 
-async function fetchJSON(rawUrl) {
+async function fetchJSON(rawUrl, timeoutMs = 8000) {
   for (const proxy of PROXIES) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(proxy(rawUrl), { signal: AbortSignal.timeout(10000) });
+      const res = await fetch(proxy(rawUrl), { signal: controller.signal });
+      clearTimeout(timer);
       if (!res.ok) continue;
-      return await res.json();
-    } catch { /* try next */ }
+      const text = await res.text();
+      if (!text || text.trim().startsWith('<')) continue;
+      return JSON.parse(text);
+    } catch {
+      clearTimeout(timer);
+    }
   }
-  throw new Error(`All proxies failed for: ${rawUrl}`);
+  throw new Error(`All proxies failed: ${rawUrl}`);
 }
 
 // ─── Batch quotes ────────────────────────────────────────────────────────────
 export async function fetchBatchQuotes(symbols) {
   const chunks = [];
-  for (let i = 0; i < symbols.length; i += 8) chunks.push(symbols.slice(i, i + 8));
+  for (let i = 0; i < symbols.length; i += 12) chunks.push(symbols.slice(i, i + 12));
   const out = {};
-  for (const chunk of chunks) {
+  await Promise.all(chunks.map(async chunk => {
     try {
       const data = await fetchJSON(
         `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${chunk.join(',')}`
@@ -42,9 +50,8 @@ export async function fetchBatchQuotes(symbols) {
           exchange:  q.fullExchangeName,
         };
       }
-    } catch { /* skip */ }
-    await new Promise(r => setTimeout(r, 200));
-  }
+    } catch { /* skip failed chunk */ }
+  }));
   return out;
 }
 
@@ -105,17 +112,27 @@ export async function fetchCompanyInfo(symbol) {
   };
 }
 
-// ─── News ─────────────────────────────────────────────────────────────────────
+// ─── News (multi-endpoint fallback) ──────────────────────────────────────────
 export async function fetchNews(symbol) {
-  const data = await fetchJSON(
-    `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&newsCount=10&quotesCount=0`
-  );
-  return (data?.news ?? []).map(n => ({
-    title:     n.title,
-    link:      n.link,
-    publisher: n.publisher,
-    time:      (n.providerPublishTime ?? 0) * 1000,
-  }));
+  const endpoints = [
+    `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&newsCount=12&quotesCount=0&screenerCount=0&listsCount=0`,
+    `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&newsCount=12&quotesCount=0`,
+  ];
+  for (const url of endpoints) {
+    try {
+      const data = await fetchJSON(url);
+      const items = data?.news ?? [];
+      if (items.length > 0) {
+        return items.map(n => ({
+          title:     n.title,
+          link:      n.link,
+          publisher: n.publisher,
+          time:      (n.providerPublishTime ?? 0) * 1000,
+        }));
+      }
+    } catch { /* try next */ }
+  }
+  return [];
 }
 
 // ─── Stock search (autocomplete) ─────────────────────────────────────────────

@@ -21,7 +21,7 @@ export const EURONEXT_STOCKS = [
   { symbol: 'GLE.PA',   name: 'Société Générale S.A.' },
   { symbol: 'RNO.PA',   name: 'Renault S.A.' },
   { symbol: 'STM.PA',   name: 'STMicroelectronics N.V.' },
-  { symbol: 'VK.PA',    name: 'Vallourec S.A.' },
   { symbol: 'ENGI.PA',  name: 'Engie S.A.' },
-  { symbol: 'FP.PA',    name: 'TotalEnergies FP' },
+  { symbol: 'CAP.PA',   name: 'Capgemini SE' },
+  { symbol: 'DSY.PA',   name: 'Dassault Systèmes SE' },
 ];

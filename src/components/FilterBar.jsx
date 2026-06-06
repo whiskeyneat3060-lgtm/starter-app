@@ -56,12 +56,14 @@ export function FilterBar({
   maxPrice, onMaxPriceChange,
   isOpen: panelOpen, onToggle,
 }) {
+  // Clicking an inactive market switches to it exclusively (radio style).
+  // If both are active, clicking one removes it from the multi-selection.
   const toggleMarket = (id) =>
-    onMarketsChange(prev =>
-      prev.includes(id)
-        ? prev.length > 1 ? prev.filter(m => m !== id) : prev
-        : [...prev, id]
-    );
+    onMarketsChange(prev => {
+      if (!prev.includes(id)) return [id];             // switch to this market
+      if (prev.length > 1)   return prev.filter(m => m !== id); // remove from multi
+      return prev;                                     // last one — keep it
+    });
 
   return (
     <div className={`filter-bar ${panelOpen ? 'expanded' : 'collapsed'}`}>
