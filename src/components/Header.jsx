@@ -1,138 +1,73 @@
 import { useState, useEffect } from 'react';
-import {
-  isNasdaqOpen, isEuronextOpen,
-  nasdaqCountdown, euronextCountdown,
-  formatCountdown,
-} from '../utils/formatters.js';
+import { isNasdaqOpen, isEuronextOpen } from '../utils/formatters.js';
 
-const MARKETS = [
-  { id: 'NASDAQ',   label: 'NASDAQ', flag: '🇺🇸' },
-  { id: 'EURONEXT', label: 'Euronext', flag: '🇪🇺' },
-];
-
-const CONF_FILTERS = [
-  { value: 95, label: '🔥 ≥95%', cls: 'elite' },
-  { value: 90, label: '⚡ ≥90%', cls: 'high'  },
-  { value: 80, label: '✓ ≥80%',  cls: 'strong'},
-];
-
-function MarketPill({ market, active, onToggle }) {
-  const [open, setOpen] = useState(false);
-  const [countdown, setCountdown] = useState(null);
-
-  useEffect(() => {
-    const update = () => {
-      const isOpen = market.id === 'NASDAQ' ? isNasdaqOpen() : isEuronextOpen();
-      const cd     = market.id === 'NASDAQ' ? nasdaqCountdown() : euronextCountdown();
-      setOpen(isOpen);
-      setCountdown(cd);
-    };
-    update();
-    const id = setInterval(update, 30000);
-    return () => clearInterval(id);
-  }, [market.id]);
-
-  return (
-    <button
-      className={`market-pill ${active ? 'active' : ''} ${open ? 'mkt-open' : 'mkt-closed'}`}
-      onClick={() => onToggle(market.id)}
-      title={countdown ? `${countdown.label} ${formatCountdown(countdown.mins)}` : ''}
-    >
-      <span className={`mkt-dot ${open ? 'pulsing' : ''}`} />
-      <span className="mkt-flag">{market.flag}</span>
-      <span className="mkt-name">{market.label}</span>
-      <span className={`mkt-status-text ${open ? 'open' : ''}`}>
-        {open ? 'Open' : (countdown ? formatCountdown(countdown.mins) : 'Closed')}
-      </span>
-    </button>
-  );
-}
-
-export function Header({
-  activeMarkets, onMarketsChange,
-  confidenceMin, onConfidenceChange,
-  scanning, lastScan, signalCount, stocksScanned,
-  onMenuToggle,
-}) {
+export function Header({ scanning, lastScan, signalCount, stocksScanned, onMenuToggle, onSearchOpen }) {
   const [time, setTime] = useState(new Date());
+  const [mktOpen, setMktOpen] = useState(false);
 
   useEffect(() => {
-    const id = setInterval(() => setTime(new Date()), 1000);
+    const tick = () => {
+      setTime(new Date());
+      setMktOpen(isNasdaqOpen() || isEuronextOpen());
+    };
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
 
-  const toggleMarket = (id) => {
-    onMarketsChange(prev =>
-      prev.includes(id)
-        ? prev.length > 1 ? prev.filter(m => m !== id) : prev
-        : [...prev, id]
-    );
-  };
-
-  const hh = time.getHours().toString().padStart(2,'0');
-  const mm = time.getMinutes().toString().padStart(2,'0');
-  const ss = time.getSeconds().toString().padStart(2,'0');
+  const hh = time.getHours().toString().padStart(2, '0');
+  const mm = time.getMinutes().toString().padStart(2, '0');
+  const ss = time.getSeconds().toString().padStart(2, '0');
 
   return (
     <header className="app-header">
-      <div className="header-row1">
-        <button className="menu-toggle-btn" onClick={onMenuToggle}>☰</button>
+      <button className="menu-toggle-btn" onClick={onMenuToggle} aria-label="Menu">
+        <svg width="18" height="14" viewBox="0 0 18 14" fill="currentColor">
+          <rect y="0"  width="18" height="2" rx="1"/>
+          <rect y="6"  width="18" height="2" rx="1"/>
+          <rect y="12" width="18" height="2" rx="1"/>
+        </svg>
+      </button>
 
-        <div className="market-pills">
-          {MARKETS.map(m => (
-            <MarketPill
-              key={m.id}
-              market={m}
-              active={activeMarkets.includes(m.id)}
-              onToggle={toggleMarket}
-            />
-          ))}
-        </div>
-
-        <div className="header-spacer" />
-
-        <div className="header-stats">
-          {stocksScanned > 0 && (
-            <span className="stat-chip">
-              <span className="stat-val">{stocksScanned}</span> scanned
-            </span>
-          )}
-          {signalCount > 0 && (
-            <span className="stat-chip signals">
-              <span className="stat-val">{signalCount}</span> signal{signalCount !== 1 ? 's' : ''}
-            </span>
-          )}
-          {lastScan && (
-            <span className="stat-chip muted">
-              {lastScan.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
-            </span>
-          )}
-        </div>
-
-        <div className="header-clock">
-          <span className="clock-time">{hh}:{mm}:{ss}</span>
-          <span className="clock-tz">ET</span>
-        </div>
+      <div className="header-brand">
+        <svg width="26" height="26" viewBox="0 0 24 24" className="brand-logo-svg">
+          <rect width="24" height="24" rx="5" fill="#4f46e5"/>
+          <polyline points="3,17 7,11 11,14 17,7 21,10" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="21" cy="10" r="1.5" fill="#fbbf24"/>
+        </svg>
+        <span className="brand-name">AI Trading</span>
+        <span className="brand-sub">Signals</span>
       </div>
 
-      <div className="header-row2">
-        <span className="conf-label">Confidence Filter</span>
-        <div className="conf-filters">
-          {CONF_FILTERS.map(f => (
-            <button
-              key={f.value}
-              className={`conf-btn conf-${f.cls} ${confidenceMin === f.value ? 'active' : ''}`}
-              onClick={() => onConfidenceChange(f.value)}
-            >
-              {f.label}
-            </button>
-          ))}
+      <div className="header-mid">
+        {scanning ? (
+          <span className="hdr-status scanning">
+            <span className="hdr-spin">⟳</span>
+            <span className="hdr-status-txt">Scanning…</span>
+          </span>
+        ) : signalCount > 0 ? (
+          <span className="hdr-status has-signals">
+            <span className="hdr-dot active" />
+            <span className="hdr-status-txt">{signalCount} signal{signalCount !== 1 ? 's' : ''}</span>
+          </span>
+        ) : (
+          <span className={`hdr-status ${mktOpen ? 'mkt-live' : 'mkt-closed'}`}>
+            <span className={`hdr-dot ${mktOpen ? 'live' : ''}`} />
+            <span className="hdr-status-txt">{mktOpen ? 'Market Open' : 'Market Closed'}</span>
+          </span>
+        )}
+      </div>
+
+      <div className="header-right">
+        <div className="header-clock">
+          <span className="clock-time">{hh}:{mm}<span className="clock-sec">:{ss}</span></span>
         </div>
-        <span className="conf-hint">
-          {confidenceMin === 95 ? 'Only the absolute best setups' :
-           confidenceMin === 90 ? 'High-conviction setups only' :
-           'Broad scan — more signals, lower certainty'}
-        </span>
+        <button className="hdr-search-btn" onClick={onSearchOpen} aria-label="Search stocks">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+            <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.8"/>
+            <path d="M14 14l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+        </button>
       </div>
     </header>
   );

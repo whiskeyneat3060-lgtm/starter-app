@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback } from 'react';
-import { Header }          from './components/Header.jsx';
-import { Sidebar }         from './components/Sidebar.jsx';
-import { StockScanner }    from './components/StockScanner.jsx';
-import { FavoritesPanel }  from './components/FavoritesPanel.jsx';
+import { Header }           from './components/Header.jsx';
+import { Sidebar }          from './components/Sidebar.jsx';
+import { BottomNav }        from './components/BottomNav.jsx';
+import { StockScanner }     from './components/StockScanner.jsx';
+import { StockSearch }      from './components/StockSearch.jsx';
+import { FavoritesPanel }   from './components/FavoritesPanel.jsx';
 import { StockDetailModal } from './components/StockDetailModal.jsx';
 import './App.css';
 
@@ -32,18 +34,34 @@ function useSessionStorage(key, init) {
   return [val, set];
 }
 
+function makeMinimalSignal(symbol, name = '') {
+  return {
+    symbol, name: name || symbol,
+    market: 'SEARCH', confidence: 0, tier: 'STRONG',
+    patterns: [], technicalSignals: [],
+    entryPrice: 0, stopLoss: 0, target: 0,
+    risk: 0, reward: 0, rrRatio: 0, rsi: null,
+    timeframe: 'intraday', timeframeLabel: 'Intraday',
+    timestamp: Date.now(), isSearchResult: true,
+  };
+}
+
 export default function App() {
-  const [sidebarOpen,     setSidebarOpen]     = useState(window.innerWidth >= 768);
-  const [sidebarView,     setSidebarView]     = useState('scanner');
-  const [activeMarkets,   setActiveMarkets]   = useState(['NASDAQ']);
-  const [confidenceMin,   setConfidenceMin]   = useState(90);
-  const [favorites,       setFavorites]       = useLocalStorage('ats-favorites', []);
-  const [signalHistory,   setSignalHistory]   = useSessionStorage('ats-history', []);
-  const [scanning,        setScanning]        = useState(false);
-  const [lastScan,        setLastScan]        = useState(null);
-  const [signalCount,     setSignalCount]     = useState(0);
-  const [stocksScanned,   setStocksScanned]   = useState(0);
-  const [historySignal,   setHistorySignal]   = useState(null);
+  const [view,           setView]          = useState('scanner');
+  const [sidebarOpen,    setSidebarOpen]   = useState(window.innerWidth >= 1024);
+  const [searchOpen,     setSearchOpen]    = useState(false);
+  const [activeMarkets,  setActiveMarkets] = useState(['NASDAQ']);
+  const [confidenceMin,  setConfidenceMin] = useState(90);
+  const [timeframe,      setTimeframe]     = useState('intraday');
+  const [maxPrice,       setMaxPrice]      = useState(Infinity);
+  const [favorites,      setFavorites]     = useLocalStorage('ats-favorites', []);
+  const [signalHistory,  setSignalHistory] = useSessionStorage('ats-history', []);
+  const [scanning,       setScanning]      = useState(false);
+  const [lastScan,       setLastScan]      = useState(null);
+  const [signalCount,    setSignalCount]   = useState(0);
+  const [stocksScanned,  setStocksScanned] = useState(0);
+  const [modalSignal,    setModalSignal]   = useState(null);
+  const [modalQuote,     setModalQuote]    = useState(null);
 
   const scanTriggerRef = useRef(null);
 
@@ -60,19 +78,40 @@ export default function App() {
     });
   }, [setSignalHistory]);
 
+  const openModal = useCallback((signal, quote = null) => {
+    setModalSignal(signal);
+    setModalQuote(quote);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setModalSignal(null);
+    setModalQuote(null);
+  }, []);
+
+  const handleSearchSelect = useCallback((stock) => {
+    const sig = makeMinimalSignal(stock.symbol, stock.name);
+    openModal(sig, null);
+    setSearchOpen(false);
+  }, [openModal]);
+
   const handleFavoriteOpen = useCallback((sym, sig) => {
-    if (sig) { setHistorySignal(sig); return; }
-    // Find in history or open with minimal signal
+    if (sig) { openModal(sig); return; }
     const hist = signalHistory.find(s => s.symbol === sym);
-    if (hist) setHistorySignal(hist);
-    else setHistorySignal({ symbol: sym, name: sym, market: 'NASDAQ', confidence: 0, tier: 'STRONG', patterns: [], technicalSignals: [], entryPrice: 0, stopLoss: 0, target: 0, risk: 0, reward: 0, rrRatio: 0, rsi: null, timestamp: Date.now() });
-  }, [signalHistory]);
+    openModal(hist ?? makeMinimalSignal(sym));
+  }, [signalHistory, openModal]);
+
+  const handleViewChange = useCallback((v) => {
+    if (v === 'search') { setSearchOpen(true); return; }
+    setView(v);
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  }, []);
 
   return (
     <div className={`app-root ${sidebarOpen ? 'sb-open' : 'sb-closed'}`}>
+      {/* Desktop sidebar */}
       <Sidebar
-        view={sidebarView}
-        onViewChange={v => { setSidebarView(v); }}
+        view={view}
+        onViewChange={handleViewChange}
         favorites={favorites}
         signalHistory={signalHistory}
         onFavoriteOpen={handleFavoriteOpen}
@@ -82,22 +121,21 @@ export default function App() {
 
       <div className="app-main">
         <Header
-          activeMarkets={activeMarkets}
-          onMarketsChange={setActiveMarkets}
-          confidenceMin={confidenceMin}
-          onConfidenceChange={setConfidenceMin}
           scanning={scanning}
           lastScan={lastScan}
           signalCount={signalCount}
           stocksScanned={stocksScanned}
           onMenuToggle={() => setSidebarOpen(p => !p)}
+          onSearchOpen={() => setSearchOpen(true)}
         />
 
         <div className="app-content">
-          {(sidebarView === 'scanner' || sidebarView === 'history') && (
+          {(view === 'scanner' || view === 'history') && (
             <StockScanner
-              activeMarkets={activeMarkets}
-              confidenceMin={confidenceMin}
+              activeMarkets={activeMarkets}   onMarketsChange={setActiveMarkets}
+              confidenceMin={confidenceMin}   onConfidenceChange={setConfidenceMin}
+              timeframe={timeframe}           onTimeframeChange={setTimeframe}
+              maxPrice={maxPrice}             onMaxPriceChange={setMaxPrice}
               favorites={favorites}
               onToggleFavorite={toggleFavorite}
               onScanStart={() => setScanning(true)}
@@ -112,7 +150,7 @@ export default function App() {
             />
           )}
 
-          {sidebarView === 'favorites' && (
+          {view === 'favorites' && (
             <FavoritesPanel
               favorites={favorites}
               onRemoveFavorite={toggleFavorite}
@@ -120,7 +158,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Big floating scan button */}
+        {/* Floating scan button */}
         <div className="scan-fab-wrap">
           <button
             className={`scan-fab-btn ${scanning ? 'scanning' : ''}`}
@@ -128,17 +166,35 @@ export default function App() {
             disabled={scanning}
           >
             <span className={`scan-fab-icon ${scanning ? 'spin' : ''}`}>⟳</span>
-            {scanning ? 'Scanning Markets…' : 'Scan Markets Now'}
+            {scanning ? 'Scanning…' : 'Scan Now'}
           </button>
         </div>
       </div>
 
-      {historySignal && (
+      {/* Mobile bottom nav */}
+      <BottomNav
+        view={view}
+        onChange={handleViewChange}
+        favCount={favorites.length}
+        histCount={signalHistory.length}
+      />
+
+      {/* Search overlay */}
+      {searchOpen && (
+        <StockSearch
+          onClose={() => setSearchOpen(false)}
+          onSelectStock={handleSearchSelect}
+        />
+      )}
+
+      {/* Detail modal */}
+      {modalSignal && (
         <StockDetailModal
-          signal={historySignal}
-          quote={null}
-          isFavorite={favorites.includes(historySignal.symbol)}
-          onClose={() => setHistorySignal(null)}
+          signal={modalSignal}
+          quote={modalQuote}
+          isFavorite={favorites.includes(modalSignal.symbol)}
+          timeframe={timeframe}
+          onClose={closeModal}
           onToggleFavorite={toggleFavorite}
         />
       )}

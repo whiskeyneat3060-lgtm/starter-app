@@ -7,10 +7,10 @@ import { generateDemoCandles } from '../data/demoSignal.js';
 import { fmtPrice, fmtPct } from '../utils/formatters.js';
 
 const TABS = ['Chart', 'Company', 'News'];
-
 const TIER_COLOR = { ELITE: 'var(--elite-color)', HIGH: 'var(--high-color)', STRONG: 'var(--strong-color)' };
+const TF_LABELS  = { intraday: '⚡ Intraday', swing: '📈 Swing', longterm: '📊 Long-term' };
 
-export function StockDetailModal({ signal, quote, isFavorite, onClose, onToggleFavorite }) {
+export function StockDetailModal({ signal, quote, isFavorite, onClose, onToggleFavorite, timeframe = 'intraday' }) {
   const [tab,     setTab]     = useState('Chart');
   const [candles, setCandles] = useState([]);
   const [info,    setInfo]    = useState(null);
@@ -19,6 +19,8 @@ export function StockDetailModal({ signal, quote, isFavorite, onClose, onToggleF
   const [error,   setError]   = useState(null);
 
   const up = (quote?.changePct ?? 0) >= 0;
+  const isSearch = signal.isSearchResult;
+  const tf = signal.timeframe ?? timeframe;
 
   useEffect(() => {
     let cancelled = false;
@@ -31,21 +33,21 @@ export function StockDetailModal({ signal, quote, isFavorite, onClose, onToggleF
           return;
         }
         const [c, inf, nws] = await Promise.all([
-          fetchCandles(signal.symbol),
+          fetchCandles(signal.symbol, tf),
           fetchCompanyInfo(signal.symbol),
           fetchNews(signal.symbol),
         ]);
         if (cancelled) return;
         setCandles(c); setInfo(inf); setNews(nws);
-      } catch (e) {
-        if (!cancelled) setError('Could not load data. Check network / CORS proxy.');
+      } catch {
+        if (!cancelled) setError('Could not load data — check network / CORS proxy.');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [signal.symbol, signal.isDemo]);
+  }, [signal.symbol, signal.isDemo, tf]);
 
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
@@ -53,39 +55,47 @@ export function StockDetailModal({ signal, quote, isFavorite, onClose, onToggleF
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
 
-  const riskPct   = ((signal.risk   / signal.entryPrice) * 100).toFixed(2);
-  const rewardPct = ((signal.reward / signal.entryPrice) * 100).toFixed(2);
+  const riskPct   = signal.entryPrice > 0 ? ((signal.risk   / signal.entryPrice) * 100).toFixed(2) : '0.00';
+  const rewardPct = signal.entryPrice > 0 ? ((signal.reward / signal.entryPrice) * 100).toFixed(2) : '0.00';
   const tierColor = TIER_COLOR[signal.tier] ?? TIER_COLOR.STRONG;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
 
-        <div className="modal-header">
-          <div style={{ flex: 1 }}>
-            <div className="modal-symbol-row">
-              <span className="modal-symbol">{signal.symbol}</span>
-              <span className="modal-market-tag">{signal.market}</span>
-              {signal.isDemo && <span className="demo-tag">DEMO</span>}
+        {/* Header */}
+        <div className="modal-hdr">
+          <div className="modal-hdr-info">
+            <div className="modal-sym-row">
+              <span className="modal-sym">{signal.symbol}</span>
+              {signal.market && signal.market !== 'SEARCH' && (
+                <span className="modal-mkt-tag">{signal.market}</span>
+              )}
+              {signal.isDemo && <span className="modal-demo-tag">DEMO</span>}
+              {isSearch && <span className="modal-search-tag">SEARCH</span>}
+              <span className="modal-tf-tag">{TF_LABELS[tf] ?? TF_LABELS.intraday}</span>
             </div>
             <div className="modal-name">{quote?.name ?? signal.name ?? signal.symbol}</div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span className="modal-price">{fmtPrice(signal.entryPrice)}</span>
-              <span className={`modal-change ${up ? 'green' : 'red'}`}>{fmtPct(quote?.changePct)}</span>
+          <div className="modal-hdr-price">
+            <div className="modal-price-row">
+              <span className="modal-price">{fmtPrice(signal.entryPrice || quote?.price || 0)}</span>
+              <span className={`modal-chg ${up ? 'green' : 'red'}`}>{fmtPct(quote?.changePct)}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className="modal-conf" style={{ color: tierColor }}>{signal.confidence}% {signal.tier}</span>
-            </div>
+            {!isSearch && (
+              <div className="modal-conf-row" style={{ color: tierColor }}>
+                <span>{signal.confidence}%</span>
+                <span className="modal-tier">{signal.tier}</span>
+              </div>
+            )}
           </div>
 
-          <div className="modal-actions">
+          <div className="modal-hdr-btns">
             <button
               className={`modal-fav-btn ${isFavorite ? 'faved' : ''}`}
               onClick={() => onToggleFavorite?.(signal.symbol)}
-              title={isFavorite ? 'Remove from favourites' : 'Add to favourites'}
+              title={isFavorite ? 'Remove from saved' : 'Save to favourites'}
             >
               {isFavorite ? '★' : '☆'}
             </button>
@@ -93,35 +103,47 @@ export function StockDetailModal({ signal, quote, isFavorite, onClose, onToggleF
           </div>
         </div>
 
-        {/* Signal stats bar */}
-        <div className="signal-bar">
-          {[
-            { label: 'Entry',     val: fmtPrice(signal.entryPrice), cls: 'blue' },
-            { label: 'Stop Loss', val: fmtPrice(signal.stopLoss),   cls: 'red',   sub: `−${riskPct}%` },
-            { label: 'Target',    val: fmtPrice(signal.target),     cls: 'green', sub: `+${rewardPct}%` },
-            { label: 'R:R Ratio', val: `1:${signal.rrRatio.toFixed(1)}` },
-          ].map((s, i) => (
-            <div key={i} className="sig-stat">
-              <span className="sig-label">{s.label}</span>
-              <span className={`sig-val ${s.cls ?? ''}`}>{s.val}</span>
-              {s.sub && <span className={`sig-sub ${s.cls}`}>{s.sub}</span>}
+        {/* Signal stats bar — hidden for search results with no signal data */}
+        {!isSearch && signal.entryPrice > 0 && (
+          <div className="signal-bar">
+            <div className="sig-stat">
+              <span className="sig-lbl">Entry</span>
+              <span className="sig-val blue">{fmtPrice(signal.entryPrice)}</span>
             </div>
-          ))}
+            <div className="sig-stat">
+              <span className="sig-lbl">Stop</span>
+              <span className="sig-val red">{fmtPrice(signal.stopLoss)}</span>
+              <span className="sig-sub red">−{riskPct}%</span>
+            </div>
+            <div className="sig-stat">
+              <span className="sig-lbl">Target</span>
+              <span className="sig-val green">{fmtPrice(signal.target)}</span>
+              <span className="sig-sub green">+{rewardPct}%</span>
+            </div>
+            <div className="sig-stat">
+              <span className="sig-lbl">R:R</span>
+              <span className="sig-val">1:{signal.rrRatio.toFixed(1)}</span>
+            </div>
 
-          <div className="sig-stat patterns-stat">
-            <span className="sig-label">Patterns</span>
-            <div className="sig-tags">
-              {signal.patterns.map(p => <span key={p} className="sig-ptag">{p}</span>)}
-            </div>
-          </div>
+            {signal.patterns?.length > 0 && (
+              <div className="sig-stat sig-wide">
+                <span className="sig-lbl">Patterns</span>
+                <div className="sig-tags">
+                  {signal.patterns.map(p => <span key={p} className="sig-ptag">{p}</span>)}
+                </div>
+              </div>
+            )}
 
-          <div className="sig-stat signals-stat">
-            <span className="sig-label">Indicators</span>
-            <div className="sig-tags">
-              {signal.technicalSignals.map(s => <span key={s} className="sig-itag">{s}</span>)}
-            </div>
+            {signal.technicalSignals?.length > 0 && (
+              <div className="sig-stat sig-wide">
+                <span className="sig-lbl">Indicators</span>
+                <div className="sig-tags">
+                  {signal.technicalSignals.map(s => <span key={s} className="sig-itag">{s}</span>)}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Tabs */}
         <div className="modal-tabs">
@@ -143,9 +165,9 @@ export function StockDetailModal({ signal, quote, isFavorite, onClose, onToggleF
                   <span>Loading chart…</span>
                 </div>
               ) : candles.length === 0 ? (
-                <div className="chart-loading">No intraday data available</div>
+                <div className="chart-loading">No chart data available</div>
               ) : (
-                <TradingChart candles={candles} signal={signal} />
+                <TradingChart candles={candles} signal={isSearch ? null : signal} />
               )}
             </div>
           )}

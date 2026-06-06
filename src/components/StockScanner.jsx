@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { StockCard }          from './StockCard.jsx';
 import { StockDetailModal }   from './StockDetailModal.jsx';
+import { FilterBar }          from './FilterBar.jsx';
 import { NASDAQ_STOCKS }      from '../data/nasdaqStocks.js';
 import { EURONEXT_STOCKS }    from '../data/euronextStocks.js';
 import { DEMO_SIGNAL, DEMO_QUOTE } from '../data/demoSignal.js';
 import { fetchBatchQuotes, fetchCandles } from '../services/stockService.js';
 import { generateSignal }     from '../services/signalService.js';
 
-const PRICE_MAX   = 200;
 const RESCAN_MS   = 5 * 60 * 1000;
 const CONCURRENCY = 4;
 
@@ -26,7 +26,10 @@ async function pooledMap(items, fn, concurrency) {
 }
 
 export function StockScanner({
-  activeMarkets, confidenceMin,
+  activeMarkets, onMarketsChange,
+  confidenceMin, onConfidenceChange,
+  timeframe, onTimeframeChange,
+  maxPrice, onMaxPriceChange,
   favorites, onToggleFavorite,
   onScanStart, onScanEnd,
   registerTrigger,
@@ -39,7 +42,17 @@ export function StockScanner({
   const [quotes,    setQuotes]    = useState({});
   const [selected,  setSelected]  = useState(null);
   const [sortBy,    setSortBy]    = useState('confidence');
+  const [filterOpen, setFilterOpen] = useState(false);
   const scanningRef = useRef(false);
+  const timeframeRef = useRef(timeframe);
+  const confidenceRef = useRef(confidenceMin);
+  const maxPriceRef = useRef(maxPrice);
+  const marketsRef = useRef(activeMarkets);
+
+  useEffect(() => { timeframeRef.current   = timeframe; },   [timeframe]);
+  useEffect(() => { confidenceRef.current  = confidenceMin; }, [confidenceMin]);
+  useEffect(() => { maxPriceRef.current    = maxPrice; },    [maxPrice]);
+  useEffect(() => { marketsRef.current     = activeMarkets; }, [activeMarkets]);
 
   const runScan = useCallback(async () => {
     if (scanningRef.current) return;
@@ -49,10 +62,15 @@ export function StockScanner({
     setProgress(5);
     setProgLabel('Building stock list…');
 
+    const curMarkets    = marketsRef.current;
+    const curConfidence = confidenceRef.current;
+    const curMaxPrice   = maxPriceRef.current;
+    const curTimeframe  = timeframeRef.current;
+
     try {
       const allStocks = [
-        ...(activeMarkets.includes('NASDAQ')   ? NASDAQ_STOCKS.map(s => ({ ...s, market: 'NASDAQ' }))   : []),
-        ...(activeMarkets.includes('EURONEXT') ? EURONEXT_STOCKS.map(s => ({ ...s, market: 'EURONEXT' })) : []),
+        ...(curMarkets.includes('NASDAQ')   ? NASDAQ_STOCKS.map(s => ({ ...s, market: 'NASDAQ' }))    : []),
+        ...(curMarkets.includes('EURONEXT') ? EURONEXT_STOCKS.map(s => ({ ...s, market: 'EURONEXT' })) : []),
       ];
 
       setProgLabel(`Fetching quotes for ${allStocks.length} stocks…`);
@@ -60,22 +78,22 @@ export function StockScanner({
       setQuotes(allQuotes);
       setProgress(25);
 
+      const priceLimit = curMaxPrice === Infinity ? Infinity : curMaxPrice;
       const filtered = allStocks.filter(s => {
         const q = allQuotes[s.symbol];
-        return q && q.price > 0 && q.price < PRICE_MAX;
+        return q && q.price > 0 && q.price <= priceLimit;
       });
 
-      setProgLabel(`Analysing ${filtered.length} stocks (under $${PRICE_MAX})…`);
-
+      setProgLabel(`Analysing ${filtered.length} stocks…`);
       const found = [];
       let done = 0;
       const total = filtered.length;
 
       await pooledMap(filtered, async (stock) => {
         try {
-          const candles = await fetchCandles(stock.symbol);
+          const candles = await fetchCandles(stock.symbol, curTimeframe);
           if (candles.length >= 35) {
-            const sig = generateSignal(stock.symbol, candles, stock.market, confidenceMin);
+            const sig = generateSignal(stock.symbol, candles, stock.market, curConfidence, curTimeframe);
             if (sig) {
               const enriched = { ...sig, name: stock.name };
               found.push(enriched);
@@ -101,21 +119,21 @@ export function StockScanner({
       setScanning(false);
       setTimeout(() => setProgress(0), 1800);
     }
-  }, [activeMarkets, confidenceMin, onScanStart, onScanEnd, addToHistory]);
+  }, [onScanStart, onScanEnd, addToHistory]);
 
-  useEffect(() => {
-    registerTrigger?.(runScan);
-  }, [registerTrigger, runScan]);
-
+  useEffect(() => { registerTrigger?.(runScan); }, [registerTrigger, runScan]);
   useEffect(() => {
     runScan();
     const id = setInterval(runScan, RESCAN_MS);
     return () => clearInterval(id);
   }, []); // eslint-disable-line
 
-  // Filter signals by confidence and active market
   const visible = signals
-    .filter(s => s.confidence >= confidenceMin && activeMarkets.includes(s.market))
+    .filter(s =>
+      s.confidence >= confidenceMin &&
+      activeMarkets.includes(s.market) &&
+      (maxPrice === Infinity || s.entryPrice <= maxPrice)
+    )
     .sort((a, b) => {
       if (sortBy === 'confidence') return b.confidence - a.confidence;
       if (sortBy === 'rr')         return b.rrRatio - a.rrRatio;
@@ -128,18 +146,27 @@ export function StockScanner({
   return (
     <>
       <div className="scanner-content">
+        {/* Filters */}
+        <FilterBar
+          activeMarkets={activeMarkets}        onMarketsChange={onMarketsChange}
+          timeframe={timeframe}                onTimeframeChange={onTimeframeChange}
+          confidenceMin={confidenceMin}        onConfidenceChange={onConfidenceChange}
+          maxPrice={maxPrice}                  onMaxPriceChange={onMaxPriceChange}
+          isOpen={filterOpen}                  onToggle={() => setFilterOpen(p => !p)}
+        />
+
+        {/* Toolbar */}
         <div className="scanner-toolbar">
           <div className="toolbar-left">
             <span className="scanner-title">Live Buy Signals</span>
-            {visible.length > 0 && <span className="badge-active">{visible.length} active</span>}
+            {visible.length > 0 && <span className="badge-count">{visible.length}</span>}
           </div>
           <div className="toolbar-right">
-            <span className="sort-label">Sort</span>
             <select className="sort-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
-              <option value="confidence">Confidence</option>
-              <option value="rr">R:R Ratio</option>
-              <option value="change">% Change</option>
-              <option value="symbol">Symbol A–Z</option>
+              <option value="confidence">By Confidence</option>
+              <option value="rr">By R:R Ratio</option>
+              <option value="change">By % Change</option>
+              <option value="symbol">A–Z</option>
             </select>
           </div>
         </div>
@@ -154,11 +181,11 @@ export function StockScanner({
           </div>
         )}
 
-        {/* Skeleton */}
+        {/* Skeleton while loading */}
         {scanning && visible.length === 0 && (
           <div className="cards-grid">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="skeleton-card" style={{ animationDelay: `${i * 0.1}s` }} />
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="skeleton-card" style={{ animationDelay: `${i * 0.12}s` }} />
             ))}
           </div>
         )}
@@ -176,7 +203,6 @@ export function StockScanner({
             />
           ))}
 
-          {/* Demo card when no signals */}
           {showDemo && (
             <StockCard
               signal={DEMO_SIGNAL}
@@ -188,13 +214,12 @@ export function StockScanner({
           )}
         </div>
 
-        {/* Empty explanation */}
         {showDemo && (
           <div className="demo-notice">
-            <span className="demo-notice-icon">ℹ️</span>
+            <span>ℹ️</span>
             <span>
-              No live signals match the current filter. The card above is a <strong>demo signal</strong> showing how results will appear.
-              Signals require ≥{confidenceMin}% confidence — multiple indicators must align simultaneously.
+              No live signals match current filters. The card above is a <strong>demo</strong>.
+              Signals require ≥{confidenceMin}% confidence across multiple indicators.
               Auto-rescans every 5 min.
             </span>
           </div>
@@ -204,8 +229,9 @@ export function StockScanner({
       {selected && (
         <StockDetailModal
           signal={selected}
-          quote={quotes[selected.symbol] ?? DEMO_QUOTE}
+          quote={quotes[selected.symbol] ?? (selected.isDemo ? DEMO_QUOTE : null)}
           isFavorite={favorites.includes(selected.symbol)}
+          timeframe={timeframe}
           onClose={() => setSelected(null)}
           onToggleFavorite={onToggleFavorite}
         />

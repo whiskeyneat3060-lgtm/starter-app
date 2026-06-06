@@ -32,8 +32,8 @@ function scoreIndicators(candles) {
     const { lower } = bollingerBands(closes);
     const n = closes.length - 1;
     if (lower[n] !== null) {
-      if (closes[n] <= lower[n])           { score += 15; signals.push('Price at Lower BB'); }
-      else if (closes[n] <= lower[n]*1.005){ score += 8;  signals.push('Near Lower BB'); }
+      if (closes[n] <= lower[n])            { score += 15; signals.push('Price at Lower BB'); }
+      else if (closes[n] <= lower[n]*1.005) { score += 8;  signals.push('Near Lower BB'); }
     }
   }
 
@@ -41,7 +41,7 @@ function scoreIndicators(candles) {
     const vs  = sma(volumes, 20);
     const n   = volumes.length - 1;
     const avg = vs[n];
-    if (avg && volumes[n] > avg * 1.8)  { score += 15; signals.push(`Volume Surge (${(volumes[n]/avg).toFixed(1)}×)`); }
+    if (avg && volumes[n] > avg * 1.8)   { score += 15; signals.push(`Volume Surge (${(volumes[n]/avg).toFixed(1)}×)`); }
     else if (avg && volumes[n] > avg*1.3){ score += 8;  signals.push('Above-Avg Volume'); }
   }
 
@@ -69,7 +69,13 @@ function calcTarget(entry, stop, strength) {
   return entry + risk * (strength >= 85 ? 3.0 : strength >= 70 ? 2.5 : 2.0);
 }
 
-export function generateSignal(symbol, candles, market = 'NASDAQ', minConfidence = 80) {
+const TIMEFRAME_LABELS = {
+  intraday: { label: 'Intraday', horizon: '1–4 hours', icon: '⚡' },
+  swing:    { label: 'Swing',    horizon: '1–2 weeks', icon: '📈' },
+  longterm: { label: 'Long-term',horizon: '1–3 months', icon: '📊' },
+};
+
+export function generateSignal(symbol, candles, market = 'NASDAQ', minConfidence = 80, timeframe = 'intraday') {
   if (candles.length < 35) return null;
 
   const patterns = detectPatterns(candles);
@@ -88,11 +94,13 @@ export function generateSignal(symbol, candles, market = 'NASDAQ', minConfidence
   const risk   = price - stop;
   const reward = tgt - price;
   const tier   = confidenceTier(confidence);
+  const tf     = TIMEFRAME_LABELS[timeframe] ?? TIMEFRAME_LABELS.intraday;
 
   return {
     symbol, market, confidence,
-    tier: tier.label,
-    patterns: patterns.map(p => p.name),
+    tier:      tier.label,
+    timeframe, timeframeLabel: tf.label, timeframeHorizon: tf.horizon, timeframeIcon: tf.icon,
+    patterns:         patterns.map(p => p.name),
     technicalSignals: signals,
     entryPrice: price,
     stopLoss:   stop,
