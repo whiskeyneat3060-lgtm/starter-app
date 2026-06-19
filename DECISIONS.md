@@ -1,82 +1,49 @@
-# Architecture Decisions — Recomp OS
+# Phase 2 Implementation Decisions
 
-## Tech Stack
+## Feature 1: Text Food Logging
 
-### Frontend: Vite + React + TypeScript + Tailwind CSS v3
-- Vite chosen for fast HMR and simple Cloudflare Pages integration (static output).
-- Tailwind v3 (not v4) for stable utility-first CSS with full JIT support.
-- TypeScript throughout for correctness in projection math and API contracts.
+- Open Food Facts is tried first; if a product with energy-kcal_100g data exists it is shown for confirmation before logging.
+- If OFF returns no usable result, the call falls through to /api/food/text-log which invokes Claude.
+- The flow never dead-ends: mock keyword-matching is used when no API key is set.
+- Claude model: claude-opus-4-8 (overridable via CLAUDE_MODEL env var).
 
-### Backend: Cloudflare Pages Functions
-- Colocation with static frontend; no separate API server needed.
-- Workers runtime: fast cold starts, edge-global deployment.
-- All AI calls (Anthropic) happen server-side only — API key never exposed to browser.
+## Feature 2: Custom Foods
 
-### Database: Cloudflare D1 (SQLite)
-- SQLite semantics with D1's global read replicas.
-- Schema in /migrations for version-controlled, reproducible setup.
-- Seed data in /migrations/002_seed.sql for local dev and demo.
+- Stored per user_id=1 (single-user app).
+- Quick-log uses textLogFood with the food name and serving as the text input.
+- Seed data (one example shake) is shown in demo mode.
 
-### State Management: TanStack Query v5
-- Server-state focused; no Redux needed.
-- Seed data served in dev (USE_SEED flag) to allow UI work without Cloudflare workers.
+## Feature 3: Saved Meals
 
-### Charts: Recharts
-- Declarative React charts; good TypeScript support; responsive containers.
+- Components are stored flat with quantity multiplier.
+- Auto-naming via Claude returns a 2-4 word name; fallback uses keyword heuristics.
+- /api/saved-meals/name is a separate POST endpoint to keep naming stateless and reusable.
 
-## Auth
+## Feature 4: Water Tracking
 
-### Single PIN gate
-- Decision: no username/password, no OAuth — single shared PIN for personal use.
-- HTTP-only session cookie (30 days) prevents XSS token theft.
-- Session stored in D1 `sessions` table; deleted on logout.
-- In dev mode, auth guard bypasses redirect so UI can be developed without a running API.
+- Goal is hardcoded at 2500ml/day.
+- Dashboard shows a green hydration ring alongside energy and goal rings (resized to 120px to fit three).
+- Log page has quick-add buttons: 150 / 250 / 500 / 750ml.
 
-## AI Integration
+## Feature 5: Weight Logging
 
-### Food analysis
-- Anthropic vision API called server-side via Pages Function.
-- Falls back to mock data if `ANTHROPIC_API_KEY` is not set, enabling dev without an API key.
-- Model configurable via `CLAUDE_MODEL` env var; defaults to `claude-opus-4-8`.
-- Response parsed as structured JSON; saved directly to `food_entries`.
+- EWMA smoothing uses alpha=0.1 applied server-side.
+- Trends page shows raw weight (dashed grey) and smoothed trend (cyan) on one chart.
+- Seed data is 30 days with ~0.03kg/day downward drift and noise.
 
-### InBody extraction
-- Same pattern: Anthropic vision API to extract structured scan data from photos/PDFs.
+## Feature 6: Quick Add
 
-## Projection Engine
+- Opened via Quick Add button in Log page header.
+- Posts to /api/food/text-log with a description string containing kcal.
 
-### Location: src/lib/projection.ts (pure TypeScript)
-- No side effects, fully testable.
-- 7700 kcal/kg fat constant.
-- 85% fat partition in deficit (standard assumption; configurable).
-- Status bands: ±100 kcal/day tolerance for ON_TRACK.
-- Projects goal date from trailing 7-day weekly fat change rate.
+## Feature 7: CSV Export
 
-## Garmin Integration
+- Export button is a plain anchor with download attribute; browser handles the file.
+- Endpoint accepts ?start= and ?end= query params for date filtering.
+- No-DB path returns a static 2-day sample CSV.
 
-### GitHub Actions + Python garminconnect
-- Runs every 6 hours via cron.
-- POSTs to `/api/ingest/garmin` with `X-Ingest-Secret` header.
-- Upserts burn_entries and daily_rollup; safe to run multiple times.
+## General
 
-## Data Model
-
-### daily_rollup table
-- Maintained as a materialized summary for fast dashboard queries.
-- Updated by ingest endpoint and food analysis on every write.
-
-### meal_bucket
-- Derived from time-of-day using configurable window (`meal_window_config_json` in profiles).
-- Default windows: breakfast 5-10:30, lunch 10:30-15:00, snack 15:00-18:30, dinner 18:30-23:00.
-
-## UI
-
-### Dark theme custom palette
-- bg-base (#0A0A0C) → near black for OLED efficiency.
-- accent-energy (#00E5FF) → cyan for energy/intake ring.
-- accent-goal (#A855F7) → purple for goal progress ring.
-
-### Mobile-first layout
-- Fixed BottomNav (4 tabs) + FAB (camera, log food).
-- All cards use rounded-2xl, consistent 16px padding.
-- Horizontal scroll for meal cards (scrollbar-hide).
+- All API functions handle missing context.env.DB by returning seed/mock data.
+- USE_SEED in api.ts is true in dev, false in prod.
+- Color tokens match the design system throughout.
