@@ -10,8 +10,19 @@ interface Env {
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const url = new URL(context.request.url);
-  // Skip auth for auth endpoints
+
+  // Only protect API routes; let static assets and the SPA through
+  if (!url.pathname.startsWith('/api/')) {
+    return context.next();
+  }
+
+  // Auth endpoints are public
   if (url.pathname.startsWith('/api/auth/')) {
+    return context.next();
+  }
+
+  // No DB = dev/demo mode, allow through
+  if (!context.env.DB) {
     return context.next();
   }
 
@@ -37,7 +48,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
-  // Attach userId to context
   (context as unknown as Record<string, unknown>).userId = session.user_id;
 
   return context.next();
