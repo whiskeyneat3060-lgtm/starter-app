@@ -57,6 +57,14 @@ export default function App() {
   const [activeMarkets,  setActiveMarkets] = useState(['NASDAQ']);
   const [confidenceMin,  setConfidenceMin] = useState(80);
   const [timeframe,      setTimeframe]     = useState('intraday');
+
+  // Auto-adjust default confidence when switching timeframes
+  // Long-term weekly candles rarely show textbook patterns, so a lower
+  // threshold is needed to surface real setups
+  const handleTimeframeChange = useCallback((tf) => {
+    setTimeframe(tf);
+    setConfidenceMin(tf === 'longterm' ? 55 : tf === 'swing' ? 65 : 80);
+  }, []);
   const [maxPrice,       setMaxPrice]      = useState(Infinity);
   const [favorites,      setFavorites]     = useLocalStorage('ats-favorites', []);
   const [signalHistory,  setSignalHistory] = useSessionStorage('ats-history', []);
@@ -138,7 +146,7 @@ export default function App() {
             <StockScanner
               activeMarkets={activeMarkets}   onMarketsChange={setActiveMarkets}
               confidenceMin={confidenceMin}   onConfidenceChange={setConfidenceMin}
-              timeframe={timeframe}           onTimeframeChange={setTimeframe}
+              timeframe={timeframe}           onTimeframeChange={handleTimeframeChange}
               maxPrice={maxPrice}             onMaxPriceChange={setMaxPrice}
               favorites={favorites}
               onToggleFavorite={toggleFavorite}

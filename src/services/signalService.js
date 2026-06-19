@@ -51,6 +51,25 @@ function scoreIndicators(candles) {
     if (a5 > a10) { score += 5; signals.push('Short-term Trend Up'); }
   }
 
+  // Long-term: near 52-week (or 1-year weekly) low — high-value entry zone
+  if (closes.length >= 50) {
+    const yearLow  = Math.min(...closes.slice(-52));
+    const yearHigh = Math.max(...closes.slice(-52));
+    const cur = closes[closes.length - 1];
+    const pctFromLow = (cur - yearLow) / (yearHigh - yearLow);
+    if (pctFromLow <= 0.10)      { score += 20; signals.push('Near 52-Week Low'); }
+    else if (pctFromLow <= 0.20) { score += 12; signals.push('In Lower 20% of 52W Range'); }
+    else if (pctFromLow <= 0.35) { score += 5; }
+  }
+
+  // Long-term: price below 200-period SMA (oversold on macro scale)
+  if (closes.length >= 200) {
+    const sma200 = sma(closes, 200);
+    const n = closes.length - 1;
+    if (sma200[n] && closes[n] < sma200[n] * 0.90) { score += 10; signals.push('15%+ Below 200 SMA'); }
+    else if (sma200[n] && closes[n] < sma200[n])   { score += 6;  signals.push('Below 200 SMA'); }
+  }
+
   return { score, signals, curRSI };
 }
 
@@ -75,22 +94,31 @@ const TIMEFRAME_LABELS = {
   longterm: { label: 'Long-term',horizon: '1–3 months', icon: '📊' },
 };
 
+// Timeframe-aware minimum candle counts
+const MIN_CANDLES = { intraday: 35, swing: 35, longterm: 20 };
+
 export function generateSignal(symbol, candles, market = 'NASDAQ', minConfidence = 80, timeframe = 'intraday') {
-  if (candles.length < 35) return null;
+  const minRequired = MIN_CANDLES[timeframe] ?? 35;
+  if (candles.length < minRequired) return null;
 
-  const patterns = detectPatterns(candles);
-  if (patterns.length === 0) return null;
+  const patterns    = detectPatterns(candles);
+  // Patterns are a bonus, not a hard gate — many valid setups lack a textbook pattern
+  const best        = patterns.sort((a, b) => b.strength - a.strength)[0];
+  const patternScore = best ? (best.strength / 100) * 30 : 0;
 
-  const best         = patterns.sort((a, b) => b.strength - a.strength)[0];
-  const patternScore = (best.strength / 100) * 35;
   const { score: indScore, signals, curRSI } = scoreIndicators(candles);
 
-  const confidence = Math.min(Math.round(patternScore + indScore), 99);
+  // Base score from indicators only; pattern adds up to 30 pts on top
+  const rawScore   = indScore + patternScore;
+  const confidence = Math.min(Math.round(rawScore), 99);
   if (confidence < minConfidence) return null;
+
+  // Need at least some indicator confirmation even without a pattern
+  if (indScore < 15) return null;
 
   const price  = candles[candles.length - 1].close;
   const stop   = calcStop(candles);
-  const tgt    = calcTarget(price, stop, best.strength);
+  const tgt    = calcTarget(price, stop, best?.strength ?? 65);
   const risk   = price - stop;
   const reward = tgt - price;
   const tier   = confidenceTier(confidence);
