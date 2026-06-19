@@ -24,9 +24,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     const token = generateToken();
-    await context.env.DB.prepare(
-      'INSERT INTO sessions (token, user_id) VALUES (?, 1)'
-    ).bind(token).run();
+
+    // No DB = demo mode, skip session persistence
+    if (context.env.DB) {
+      await context.env.DB.prepare(
+        'INSERT INTO sessions (token, user_id) VALUES (?, 1)'
+      ).bind(token).run();
+    }
 
     const isSecure = new URL(context.request.url).protocol === 'https:';
     const cookieFlags = isSecure ? 'HttpOnly; Secure; SameSite=Strict' : 'HttpOnly; SameSite=Strict';

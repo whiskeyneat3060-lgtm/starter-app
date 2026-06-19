@@ -21,10 +21,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     return context.next();
   }
 
-  // No DB = dev/demo mode, allow through
+  // No DB = demo mode: allow any request with a session cookie, or no session for non-data routes
   if (!context.env.DB) {
     return context.next();
   }
+
+  // With DB, validate session cookie
 
   const cookieHeader = context.request.headers.get('Cookie') || '';
   const match = cookieHeader.match(/session=([^;]+)/);
