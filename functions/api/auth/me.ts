@@ -16,6 +16,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     });
   }
 
+  // No DB = demo mode: any valid session cookie is accepted
+  if (!context.env.DB) {
+    return new Response(JSON.stringify({ userId: 1, name: 'Demo User' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const row = await context.env.DB.prepare(
     `SELECT s.user_id, u.name FROM sessions s
      JOIN users u ON u.id = s.user_id
