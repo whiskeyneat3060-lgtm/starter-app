@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getTrends } from '../lib/api';
+import { getTrends, getWeightEntries } from '../lib/api';
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot,
@@ -20,6 +20,7 @@ const TOOLTIP_STYLE = {
 export default function Trends() {
   const [range, setRange] = useState<Range>('30d');
   const { data, isLoading } = useQuery({ queryKey: ['trends', range], queryFn: () => getTrends(range) });
+  const { data: weightEntries } = useQuery({ queryKey: ['weight', 30], queryFn: () => getWeightEntries(30) });
 
   if (isLoading || !data) {
     return (
@@ -118,6 +119,23 @@ export default function Trends() {
           </BarChart>
         </ResponsiveContainer>
       </Card>
+
+      {/* Weight trend */}
+      {weightEntries && weightEntries.length > 0 && (
+        <Card>
+          <CardLabel>Weight trend (smoothed EWMA)</CardLabel>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={weightEntries} margin={{ left: -20, right: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#252529" />
+              <XAxis dataKey="date" tick={{ fill: '#6B7280', fontSize: 10 }} tickFormatter={d => d.slice(5)} />
+              <YAxis domain={['auto', 'auto']} tick={{ fill: '#6B7280', fontSize: 10 }} unit="kg" />
+              <Tooltip {...TOOLTIP_STYLE} formatter={(v: number) => [`${v?.toFixed(1)} kg`]} />
+              <Line type="monotone" dataKey="weight_kg" stroke="#6B7280" strokeWidth={1} dot={false} name="Actual" strokeDasharray="4 2" />
+              <Line type="monotone" dataKey="smoothed_kg" stroke="#00E5FF" strokeWidth={2.5} dot={false} name="Smoothed" />
+            </LineChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
 
       {/* Intake vs burn area */}
       <Card>

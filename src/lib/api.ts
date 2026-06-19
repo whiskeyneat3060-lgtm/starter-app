@@ -1,4 +1,4 @@
-import type { DashboardData, FoodEntry, BurnEntry, Goal, InbodyScan, DailyRollup, FoodAnalyzeResult } from '../types';
+import type { DashboardData, FoodEntry, BurnEntry, Goal, InbodyScan, DailyRollup, FoodAnalyzeResult, TextLogResult, CustomFood, SavedMeal, WaterData, WeightEntry } from '../types';
 import { SEED_DASHBOARD, SEED_TODAY_FOOD, SEED_ROLLUPS, SEED_INBODY } from './seed';
 
 const USE_SEED = !import.meta.env.PROD; // always use seed in dev; prod uses real functions
@@ -103,4 +103,126 @@ export async function analyzeInbody(file: File): Promise<InbodyScan> {
 export async function getTrends(range: '30d' | '90d' | '6mo'): Promise<{ rollups: DailyRollup[]; scans: InbodyScan[] }> {
   if (USE_SEED) return { rollups: SEED_ROLLUPS, scans: [SEED_INBODY] };
   return apiFetch(`/api/trends?range=${range}`);
+}
+
+// ── Text food log ─────────────────────────────────────────────────────────────
+
+export async function textLogFood(text: string, meal_bucket?: string): Promise<TextLogResult> {
+  return apiFetch<TextLogResult>('/api/food/text-log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, meal_bucket }),
+  });
+}
+
+// ── Custom foods ──────────────────────────────────────────────────────────────
+
+const SEED_CUSTOM_FOODS: CustomFood[] = [
+  { id: 1, user_id: 1, name: 'My Protein Shake', brand: null, serving_desc: '1 scoop', serving_grams: 30, kcal: 120, protein_g: 24, carbs_g: 4, fat_g: 2, fibre_g: 0, created_at: '2026-06-01T00:00:00Z' },
+];
+
+export async function getCustomFoods(): Promise<CustomFood[]> {
+  if (USE_SEED) return SEED_CUSTOM_FOODS;
+  return apiFetch<CustomFood[]>('/api/custom-foods');
+}
+
+export async function createCustomFood(food: Omit<CustomFood, 'id' | 'user_id' | 'created_at'>): Promise<CustomFood> {
+  return apiFetch<CustomFood>('/api/custom-foods', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(food),
+  });
+}
+
+// ── Saved meals ───────────────────────────────────────────────────────────────
+
+const SEED_SAVED_MEALS: SavedMeal[] = [
+  {
+    id: 1, user_id: 1, name: 'Post-Workout Meal', auto_named: 1, meal_bucket_hint: 'lunch',
+    created_at: '2026-06-01T00:00:00Z',
+    components: [
+      { id: 1, saved_meal_id: 1, description: 'Chicken breast 150g', kcal: 248, protein_g: 47, carbs_g: 0, fat_g: 5, fibre_g: 0, quantity: 1 },
+      { id: 2, saved_meal_id: 1, description: 'Brown rice 200g cooked', kcal: 220, protein_g: 5, carbs_g: 47, fat_g: 1, fibre_g: 2, quantity: 1 },
+    ],
+    total_kcal: 468,
+    total_protein_g: 52,
+  },
+];
+
+export async function getSavedMeals(): Promise<SavedMeal[]> {
+  if (USE_SEED) return SEED_SAVED_MEALS;
+  return apiFetch<SavedMeal[]>('/api/saved-meals');
+}
+
+export async function createSavedMeal(meal: { name: string; meal_bucket_hint?: string; components: import('../types').SavedMealComponent[] }): Promise<SavedMeal> {
+  return apiFetch<SavedMeal>('/api/saved-meals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(meal),
+  });
+}
+
+export async function nameSavedMeal(components: import('../types').SavedMealComponent[]): Promise<string> {
+  const result = await apiFetch<{ name: string }>('/api/saved-meals/name', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ components }),
+  });
+  return result.name;
+}
+
+// ── Water ─────────────────────────────────────────────────────────────────────
+
+const SEED_WATER: WaterData = {
+  total_ml: 1800,
+  goal_ml: 2500,
+  entries: [
+    { id: 1, user_id: 1, logged_at: new Date().toISOString(), ml: 500 },
+    { id: 2, user_id: 1, logged_at: new Date().toISOString(), ml: 500 },
+    { id: 3, user_id: 1, logged_at: new Date().toISOString(), ml: 400 },
+    { id: 4, user_id: 1, logged_at: new Date().toISOString(), ml: 400 },
+  ],
+};
+
+export async function getWater(date: string): Promise<WaterData> {
+  if (USE_SEED) return SEED_WATER;
+  return apiFetch<WaterData>(`/api/water?date=${date}`);
+}
+
+export async function logWater(ml: number): Promise<void> {
+  await apiFetch('/api/water', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ml }),
+  });
+}
+
+// ── Weight ────────────────────────────────────────────────────────────────────
+
+function generateSeedWeights(): WeightEntry[] {
+  const entries: WeightEntry[] = [];
+  let smoothed = 82.0;
+  const alpha = 0.1;
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const date = d.toISOString().slice(0, 10);
+    const weight_kg = Math.round((82.0 - 0.03 * (29 - i) + (Math.random() - 0.5) * 0.6) * 10) / 10;
+    smoothed = alpha * weight_kg + (1 - alpha) * smoothed;
+    entries.push({ id: 30 - i, user_id: 1, date, weight_kg, source: 'manual', smoothed_kg: Math.round(smoothed * 100) / 100 });
+  }
+  return entries;
+}
+
+export async function getWeightEntries(days = 30): Promise<WeightEntry[]> {
+  if (USE_SEED) return generateSeedWeights().slice(-days);
+  return apiFetch<WeightEntry[]>(`/api/weight?days=${days}`);
+}
+
+export async function logWeight(weight_kg: number, date?: string): Promise<void> {
+  await apiFetch('/api/weight', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ weight_kg, date }),
+  });
 }

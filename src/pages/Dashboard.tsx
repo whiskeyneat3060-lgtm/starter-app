@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getDashboard } from '../lib/api';
+import { getDashboard, getWater } from '../lib/api';
 import { computeProjection } from '../lib/projection';
 import { Ring } from '../components/ui/Ring';
 import { MacroBar } from '../components/ui/MacroBar';
@@ -18,7 +18,9 @@ const BUCKET_LABEL: Record<string, string> = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const todayDate = new Date().toISOString().slice(0, 10);
   const { data, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: getDashboard });
+  const { data: waterData } = useQuery({ queryKey: ['water', todayDate], queryFn: () => getWater(todayDate) });
 
   if (isLoading || !data) {
     return (
@@ -82,14 +84,17 @@ export default function Dashboard() {
   }
 
   const sparkData = rollups14.map(r => ({ value: r.total_kcal ?? r.burn_kcal }));
+  const waterMl = waterData?.total_ml ?? 0;
+  const waterGoal = waterData?.goal_ml ?? 2500;
+  const waterRingValue = Math.min(1, waterMl / waterGoal);
 
   return (
     <div className="px-4 pt-6 pb-4 space-y-4 animate-fade-in max-w-lg mx-auto">
-      {/* Hero — two rings */}
-      <Card className="flex items-center justify-around py-6">
+      {/* Hero — three rings */}
+      <Card className="flex items-center justify-around py-6 flex-wrap gap-4">
         <Ring
           value={energyRingValue}
-          size={148}
+          size={120}
           color={energyColor}
           label="Energy Balance"
           centerText={balance <= 0 ? `−${fmt(Math.abs(balance))}` : `+${fmt(balance)}`}
@@ -97,11 +102,19 @@ export default function Dashboard() {
         />
         <Ring
           value={goalRingValue}
-          size={148}
+          size={120}
           color="#A855F7"
           label="Goal Progress"
           centerText={`${Math.round(goalRingValue * 100)}%`}
           subText="to target"
+        />
+        <Ring
+          value={waterRingValue}
+          size={120}
+          color="#22C55E"
+          label="Hydration"
+          centerText={`${Math.round(waterMl / 100) / 10}L`}
+          subText={`/ ${waterGoal / 1000}L`}
         />
       </Card>
 
@@ -213,6 +226,31 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Water card */}
+      <Card>
+        <CardLabel>Water intake</CardLabel>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <span className="text-3xl font-black tracking-tighter-nums text-primary">{Math.round(waterMl / 100) / 10}</span>
+            <span className="text-muted text-sm ml-1">/ {waterGoal / 1000} L</span>
+          </div>
+          <span className={`text-sm font-semibold ${waterMl >= waterGoal ? 'text-green' : 'text-muted'}`}>
+            {waterMl >= waterGoal ? 'Goal reached!' : `${Math.round((waterGoal - waterMl) / 100) / 10}L left`}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          {[150, 250, 500].map(ml => (
+            <button
+              key={ml}
+              onClick={() => navigate('/log')}
+              className="flex-1 py-2 rounded-xl bg-elevated text-primary text-sm font-semibold border border-border hover:border-green transition-colors"
+            >
+              +{ml}ml
+            </button>
+          ))}
+        </div>
+      </Card>
 
       {/* Trends teaser */}
       <Card onClick={() => navigate('/trends')} className="flex items-center justify-between">

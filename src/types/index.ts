@@ -88,3 +88,68 @@ export interface FoodAnalyzeResult {
   totals: { kcal: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number };
   entry_id?: number;
 }
+
+export interface TextLogResult {
+  id: number;
+  kcal: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fibre_g: number;
+  description: string;
+  meal_bucket: string;
+}
+
+export interface CustomFood {
+  id: number;
+  user_id: number;
+  name: string;
+  brand: string | null;
+  serving_desc: string | null;
+  serving_grams: number | null;
+  kcal: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fibre_g: number;
+  created_at: string;
+}
+
+export interface SavedMealComponent {
+  id?: number;
+  saved_meal_id?: number;
+  description: string;
+  kcal: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fibre_g: number;
+  quantity: number;
+}
+
+export interface SavedMeal {
+  id: number;
+  user_id: number;
+  name: string;
+  auto_named: number;
+  meal_bucket_hint: string | null;
+  created_at: string;
+  components?: SavedMealComponent[];
+  total_kcal?: number;
+  total_protein_g?: number;
+}
+
+export interface WaterData {
+  total_ml: number;
+  goal_ml: number;
+  entries: Array<{ id: number; user_id: number; logged_at: string; ml: number }>;
+}
+
+export interface WeightEntry {
+  id: number;
+  user_id: number;
+  date: string;
+  weight_kg: number;
+  source: string;
+  smoothed_kg: number | null;
+}
