@@ -1,3 +1,8 @@
 name = "recomp-os"
 compatibility_date = "2024-09-23"
 pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "whiskey"
+database_id = "52004705-2c58-492c-b87f-350c679037c6"

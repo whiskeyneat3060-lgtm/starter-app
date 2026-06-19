@@ -16,8 +16,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     return context.next();
   }
 
-  // Auth endpoints are public
-  if (url.pathname.startsWith('/api/auth/')) {
+  // Auth and init endpoints are public
+  if (url.pathname.startsWith('/api/auth/') || url.pathname === '/api/init') {
     return context.next();
   }
 
