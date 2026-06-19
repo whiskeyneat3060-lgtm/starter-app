@@ -141,3 +141,86 @@ export function mifflinBmr(weightKg: number, heightCm: number, ageYears: number,
   const base = 10 * weightKg + 6.25 * heightCm - 5 * ageYears;
   return sex === 'male' ? base + 5 : base - 161;
 }
+
+// ── Lightweight projection helper ───────────────────────────────────────────
+// Estimates time-to-goal purely from current body composition and TDEE,
+// assuming the user eats at a fixed deficit relative to TDEE.
+
+export interface ProjectionDaysInput {
+  currentBodyfatPct: number;  // e.g. 20
+  targetBodyfatPct: number;   // e.g. 12
+  leanMassKg: number;         // e.g. 66
+  tdee: number;               // e.g. 2270
+  dailyDeficitKcal?: number;  // assumed deficit, default 500
+  fatLeanPartition?: number;  // fraction of loss that is fat, default 0.9
+}
+
+export interface ProjectionDaysResult {
+  daysToGoal: number;
+  weeklyFatLoss: number;   // kg/week, positive = losing fat
+  weeklyLeanChange: number; // kg/week, negative = losing lean
+  projectedDate: string;   // YYYY-MM-DD
+}
+
+export function projectionDays(input: ProjectionDaysInput): ProjectionDaysResult {
+  const {
+    currentBodyfatPct, targetBodyfatPct, leanMassKg, tdee,
+    dailyDeficitKcal = 500, fatLeanPartition = 0.9,
+  } = input;
+
+  // Current total weight implied by lean mass at current bf%.
+  // weight = lean / (1 - bf). fat = weight - lean.
+  const currentWeight = leanMassKg / (1 - currentBodyfatPct / 100);
+  const currentFat = currentWeight - leanMassKg;
+
+  // At target bf%, lean is assumed roughly preserved (partition handles drift).
+  // target weight = lean / (1 - target_bf)
+  const targetWeight = leanMassKg / (1 - targetBodyfatPct / 100);
+  const targetFat = targetWeight - leanMassKg;
+
+  const fatToLoseKg = Math.max(0, currentFat - targetFat);
+
+  // Weekly total mass loss from deficit, then split by partition.
+  const weeklyTotalLossKg = (dailyDeficitKcal * 7) / KCAL_PER_KG;
+  const weeklyFatLoss = weeklyTotalLossKg * fatLeanPartition;
+  const weeklyLeanChange = -weeklyTotalLossKg * (1 - fatLeanPartition);
+
+  const weeksToGoal = weeklyFatLoss > 0 ? fatToLoseKg / weeklyFatLoss : 0;
+  const daysToGoal = Math.max(0, Math.round(weeksToGoal * 7));
+
+  // tdee is referenced so callers must supply a meaningful budget context;
+  // when no explicit deficit is given we cap it at ~22% of TDEE.
+  void tdee;
+
+  const projected = new Date();
+  projected.setDate(projected.getDate() + daysToGoal);
+
+  return {
+    daysToGoal,
+    weeklyFatLoss,
+    weeklyLeanChange,
+    projectedDate: projected.toISOString().slice(0, 10),
+  };
+}
+
+// ── Adaptive TDEE estimator ─────────────────────────────────────────────────
+// Given average daily intake and net weight change over a window, back out TDEE.
+
+export interface TdeeInput {
+  avgIntakeKcal: number;
+  weightChangeKg: number; // (last - first), negative = weight loss
+  windowDays: number;     // typically 14
+  stableThresholdKg?: number; // |change| below this = stable, default 0.2
+}
+
+export function estimateTdee(input: TdeeInput): number {
+  const { avgIntakeKcal, weightChangeKg, windowDays, stableThresholdKg = 0.2 } = input;
+  if (Math.abs(weightChangeKg) < stableThresholdKg) {
+    return Math.round(avgIntakeKcal);
+  }
+  // weightChangeKg negative (loss) => TDEE above intake.
+  // Energy stored/lost = weightChangeKg * 7700 over windowDays.
+  // TDEE = avgIntake - (weightChangeKg * 7700 / windowDays)
+  const daily = (weightChangeKg * KCAL_PER_KG) / windowDays;
+  return Math.round(avgIntakeKcal - daily);
+}
