@@ -1,64 +1,77 @@
-# Gap Analysis: Recomp OS vs. MFP / Cronometer / LoseIt / MacroFactor
+# Recomp OS — Gap Analysis
 
-> Analysis date: 2026-06-19  
-> Codebase: Cloudflare Pages + React 19 + D1 (Sqlite) + Claude AI backend
+_Last updated: 2026-06-19 (Revision Prompt #2)_
 
----
+## Executive Summary
 
-## Feature Gap Table
+Recomp OS is a focused, opinionated body-recomposition tool, not a general calorie
+counter — and that focus is both its biggest strength and its biggest liability.
+Where the incumbents (MyFitnessPal, Cronometer, LoseIt, MacroFactor) win on breadth
+of food data and frictionless logging, Recomp OS wins on the analytical layer:
+InBody OCR ingestion, AI free-text food analysis, fat/lean projection against a
+target body-fat percentage, and adaptive TDEE. The critical gaps were all on the
+**input** side — no barcode scanner, no real searchable food database, and (until
+this revision) no recents/copy-meal shortcuts to reduce daily logging friction.
+Closing those input gaps is the difference between a clever dashboard and a tool
+someone actually logs into every day.
 
-| Feature | MFP / Cronometer / LoseIt / MacroFactor have it | We have it | Priority | Plan |
-|---|---|---|---|---|
-| **Food logging — text / NL** | All have it (MFP search bar, MF coaching input) | YES — `POST /api/food/text-log` calls Claude to parse free-text; UI sheet in Log.tsx | — | Solid. Add recent-history context to the Claude prompt for better accuracy |
-| **Food logging — photo** | MFP (Premium), Lose It (Snap It), MacroFactor (photo) | PARTIAL — `POST /api/food/analyze` accepts an image and calls Claude vision; UI has a camera-icon FAB but no explicit photo-log flow wired in Log.tsx | High | Wire photo capture into Log.tsx sheet; show per-item breakdown from `FoodAnalyzeResult.items` |
-| **Food logging — voice** | MFP (mobile only), Lose It, MacroFactor | NO — not wired anywhere in UI or API | Medium | Add Web Speech API `SpeechRecognition` in the text-log sheet; transcribed text feeds existing `/api/food/text-log` |
-| **Food logging — barcode scan** | All four have it as a core feature | NO — no barcode API endpoint, no camera-barcode UI | High | Integrate `@zxing/browser` or native BarcodeDetector API → look up barcode in Open Food Facts → pre-fill custom-food form |
-| **Food database & search (Open Food Facts / USDA)** | All four maintain or query large food DBs | NO — all nutrition comes from Claude inference or manual entry; no structured food search | High | Add `GET /api/food/search?q=` backed by Open Food Facts REST API (free, no key); cache results in D1 `food_cache` table |
-| **Custom foods** | All four | YES — `GET/POST /api/custom-foods`, `CustomFood` type, UI sheet in Log.tsx | — | Add edit/delete endpoints; add brand + USDA fields |
-| **Saved meals / recipes** | All four | YES — `GET/POST /api/saved-meals`, `SavedMeal` type, `nameSavedMeal` AI naming, UI "Build Meal" sheet | — | Add delete + log-saved-meal-as-entry flow; show total macros before logging |
-| **Quick-add (calories only)** | All four | YES — "Quick Add" sheet in Log.tsx with kcal, protein, carbs, fat fields | — | Currently requires all four macros; truly quick-add should allow kcal-only with zeroed macros |
-| **Recents & favorites** | All four show recent foods prominently | NO — no recents list, no favorite flag on food entries or custom foods | High | Add `is_favourite` flag to `custom_foods` table; add `GET /api/food/recents` querying last-N distinct entries |
-| **Copy meal (copy yesterday's log)** | MFP (copy day), Cronometer (copy day) | NO — no copy-meal endpoint or UI | Medium | Add `POST /api/food/copy-day?from=DATE&to=DATE`; add "Copy Yesterday" button in Log header |
-| **Micronutrient tracking (vitamins, minerals)** | Cronometer (best-in-class), MFP (limited), MacroFactor (minerals) | NO — `FoodEntry` and `TextLogResult` only store kcal, protein, carbs, fat, fibre | Low | Requires food DB (Open Food Facts has full micronutrient data); extend `food_entries` schema with vitamin/mineral columns; render in a collapsible "micros" panel |
-| **Fibre tracking** | All four | YES — `fibre_g` stored in `FoodEntry`, `CustomFood`, `SavedMealComponent`, `FoodAnalyzeResult`; displayed in Dashboard macroTargets | — | Already stored; ensure Dashboard MacroBar surfaces it |
-| **Water tracking** | MFP, Cronometer, Lose It | YES — `GET/POST /api/water`, `WaterData` type, water card in Log.tsx | — | Water goal is hardcoded at 2500 ml; make it user-configurable |
-| **Weight logging** | All four | YES — `GET/POST /api/weight`, `WeightEntry` type, weight sheet in Log.tsx | — | Good foundation |
-| **Weight trend smoothing (EWMA)** | MacroFactor (signature feature), others offer moving avg | YES — EWMA computed server-side (`smoothed_kg` in `WeightEntry`), displayed on Trends chart | — | Excellent. Expose alpha parameter as a user setting |
-| **Calorie & macro goals** | All four | PARTIAL — `macroTargets` exist in `DashboardData` (kcal, protein, carbs, fat); `Goal` type exists; no UI to set macro splits directly | High | Add macro-split editor to Goals page; persist in `goals` table or a separate `macro_targets` table |
-| **Adaptive TDEE** | MacroFactor (core feature), MFP (recent addition) | NO — TDEE is taken from Garmin burn data; no algorithm to estimate TDEE from weight + intake trends | High | Implement MacroFactor-style regression: given weight trend + logged intake → back-calculate TDEE; update weekly; store in `tdee_estimates` table |
-| **Reminders & streaks** | MFP (reminders, streaks), Lose It, Cronometer | NO — no push notification infrastructure, no streak counter | Low | PWA Push API or email reminders via Cloudflare Email Workers; streak counter from consecutive days with food entries |
-| **Reporting & insights** | All four have weekly/monthly summaries | PARTIAL — Trends page has energy-balance charts, intake-vs-burn area chart, weekly bar chart; no narrative text insights | Medium | Add AI-generated weekly summary via Claude (`POST /api/insights/weekly`); render in Trends or new Insights tab |
-| **Data export (CSV)** | MFP (CSV premium), Cronometer (CSV free), MacroFactor | YES — `GET /api/export` returns food log CSV with date range params | — | Extend to export weight, water, and burn data; add to a Settings page |
-| **Body composition tracking (InBody)** | None of the four have InBody scan OCR | YES — `POST /api/inbody/analyze` with Claude OCR; `InbodyScan` type; shown in Trends | — | Unique differentiator. Add manual-entry fallback for users without InBody access |
-| **Garmin burn integration** | MacroFactor (wearable sync), MFP (Apple Health) | PARTIAL — `GET /api/ingest/garmin` endpoint exists; `BurnEntry` type; `source: 'garmin'` flag | Medium | Need OAuth or webhook flow documented; currently unclear how Garmin data actually enters the system |
-| **Multi-user / profiles** | All four | PARTIAL — `user_id` in all DB tables; PIN auth exists; `Profile` type defined but no profile API visible | Medium | Add `GET/PATCH /api/profile` to expose height, sex, birth_date for TDEE and BMR calculations; `mifflinBmr` is already implemented in `projection.ts` |
+## Feature Comparison
 
----
+| Feature | Recomp OS | MyFitnessPal | Cronometer | LoseIt | MacroFactor |
+|---|---|---|---|---|---|
+| Barcode scanning | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Large verified food DB | ❌ (OFF fallback only) | ✅ | ✅ (best micros) | ✅ | ✅ |
+| AI free-text / photo analysis | ✅ | partial (premium) | ❌ | partial | ✅ |
+| Recent foods / quick-tap | ✅ (this revision) | ✅ | ✅ | ✅ | ✅ |
+| Copy meal / copy day | ✅ (this revision) | ✅ | ✅ | ✅ | ✅ |
+| Custom foods & saved meals | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Adaptive TDEE | ✅ (this revision) | ❌ | ❌ | partial | ✅ (flagship) |
+| Body-recomp / fat-lean projection | ✅ | ❌ | ❌ | ❌ | partial |
+| InBody / DEXA OCR import | ✅ | ❌ | manual | ❌ | manual |
+| Fibre tracking | ✅ | ✅ | ✅ | partial | ✅ |
+| Full micronutrients | ❌ | partial | ✅ | partial | partial |
+| Configurable macro targets | ✅ (this revision) | ✅ | ✅ | ✅ | ✅ (auto) |
+| Configurable water goal | ✅ (this revision) | ✅ | ✅ | ✅ | ❌ |
+| Streak / habit tracking | ✅ (this revision) | ✅ | ✅ | ✅ | ❌ |
+| Wearable / Garmin sync | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-## Summary
+## Our Strengths
 
-**What we genuinely have (and do well):**
-- AI-powered text logging (Claude NLP → macros)
-- AI photo analysis for food
-- InBody OCR scan import (unique vs. competitors)
-- Weight logging with EWMA smoothing
-- Water tracking
-- Custom foods + saved meals with AI naming
-- Quick-add sheet
-- CSV export
-- Body-recomp projection engine (`projection.ts`) — a real differentiator
-- Garmin burn data ingestion skeleton
+- **InBody OCR** — drop in a scan photo and the app extracts weight, body-fat %,
+  fat mass, lean mass, skeletal muscle, BMR and visceral fat. No competitor does
+  this automatically; they all require manual entry.
+- **AI free-text analysis** — log "two boiled eggs and a banana" and get macros
+  back, with an Open Food Facts fast-path before falling back to the model.
+- **Body-recomp projections** — `computeProjection` partitions energy balance into
+  fat vs lean change and projects a goal date against a target body-fat %, with
+  AHEAD / ON_TRACK / BEHIND status. This is the analytical core competitors lack.
+- **Fibre tracking** — fibre is a first-class macro on every entry, not an
+  afterthought.
 
-**Critical gaps vs. competitors:**
-1. Barcode scanning (expected by every user)
-2. Structured food database / search (Open Food Facts or USDA)
-3. Recents / favorites list
-4. Adaptive TDEE estimation
-5. Calorie/macro goal configuration UI
-6. Voice logging
-7. Copy-meal / copy-day
+## Critical Gaps
 
-**Acceptable gaps for now (niche or complex):**
-- Full micronutrients (requires food DB first)
-- Push reminders / streaks
-- Multi-user management UI
+1. **No barcode scanning** — the single biggest friction point for packaged-food
+   logging. Every competitor has it. _(still open)_
+2. **No real food database** — we lean on Open Food Facts search + AI, which is
+   fine for whole foods but weak for branded/restaurant items and portion sizes.
+   _(still open)_
+3. ~~No recents~~ — **closed this revision** (`/api/food/recents`, quick-tap chips).
+4. ~~No adaptive TDEE~~ — **closed this revision** (`/api/tdee`, 14-day estimate).
+5. ~~No copy-meal / copy-day~~ — **closed this revision** (`/api/food/copy-day`).
+6. ~~Hardcoded macro targets~~ — **closed this revision** (Settings page + profile columns).
+7. **No full micronutrient tracking** — Cronometer's main differentiator. _(still open)_
+
+## Prioritized Roadmap
+
+| Priority | Item | Status | Effort |
+|---|---|---|---|
+| 1 | Recent foods + quick-tap | ✅ done | S |
+| 2 | Copy day / copy meal | ✅ done | S |
+| 3 | Configurable macro targets (Settings) | ✅ done | M |
+| 4 | Configurable water goal | ✅ done | S |
+| 5 | Adaptive TDEE | ✅ done | M |
+| 6 | Streak tracking | ✅ done | S |
+| 7 | Barcode scanning (camera + OFF lookup) | open | M |
+| 8 | Real food DB search w/ portions | open | L |
+| 9 | Full micronutrient panel | open | L |
+| 10 | Reminders / notifications | open | M |

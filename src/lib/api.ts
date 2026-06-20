@@ -1,4 +1,4 @@
-import type { DashboardData, FoodEntry, BurnEntry, Goal, InbodyScan, DailyRollup, FoodAnalyzeResult, TextLogResult, CustomFood, SavedMeal, WaterData, WeightEntry } from '../types';
+import type { DashboardData, FoodEntry, BurnEntry, Goal, InbodyScan, DailyRollup, FoodAnalyzeResult, TextLogResult, CustomFood, SavedMeal, WaterData, WeightEntry, RecentFood, TdeeData, MacroTargets } from '../types';
 import { SEED_DASHBOARD, SEED_TODAY_FOOD, SEED_ROLLUPS, SEED_INBODY } from './seed';
 
 const USE_SEED = !import.meta.env.PROD; // always use seed in dev; prod uses real functions
@@ -224,5 +224,75 @@ export async function logWeight(weight_kg: number, date?: string): Promise<void>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ weight_kg, date }),
+  });
+}
+
+// Alias used by tests / external callers expecting a `getWeight` name.
+export const getWeight = getWeightEntries;
+
+// ── Recent foods ────────────────────────────────────────────────────────────
+
+const SEED_RECENTS: RecentFood[] = [
+  { description: 'Greek yoghurt with oats and banana', kcal: 420, protein_g: 32, carbs_g: 52, fat_g: 8, fibre_g: 6, meal_bucket: 'breakfast' },
+  { description: 'Chicken breast with rice and broccoli', kcal: 580, protein_g: 52, carbs_g: 64, fat_g: 9, fibre_g: 5, meal_bucket: 'lunch' },
+  { description: 'Cottage cheese and apple', kcal: 210, protein_g: 22, carbs_g: 24, fat_g: 2, fibre_g: 3, meal_bucket: 'snack' },
+  { description: 'Whey protein shake', kcal: 120, protein_g: 24, carbs_g: 4, fat_g: 2, fibre_g: 0, meal_bucket: 'snack' },
+  { description: 'Salmon with sweet potato', kcal: 540, protein_g: 40, carbs_g: 38, fat_g: 22, fibre_g: 4, meal_bucket: 'dinner' },
+];
+
+export async function getRecentFoods(): Promise<RecentFood[]> {
+  if (USE_SEED) return SEED_RECENTS;
+  return apiFetch<RecentFood[]>('/api/food/recents');
+}
+
+// ── Food history / copy-day ─────────────────────────────────────────────────
+
+export async function getFoodHistory(): Promise<Record<string, FoodEntry[]>> {
+  return apiFetch<Record<string, FoodEntry[]>>('/api/food/history');
+}
+
+export async function copyDay(from?: string, to?: string): Promise<{ ok: boolean; copied: number }> {
+  return apiFetch('/api/food/copy-day', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to }),
+  });
+}
+
+// ── Adaptive TDEE ───────────────────────────────────────────────────────────
+
+const SEED_TDEE: TdeeData = {
+  tdee: 2281, avg_intake_kcal: 2050, weight_change_kg: -0.42, window_days: 14, stable: false,
+};
+
+export async function getTdee(): Promise<TdeeData> {
+  if (USE_SEED) return SEED_TDEE;
+  return apiFetch<TdeeData>('/api/tdee');
+}
+
+// ── Profile / macro targets ─────────────────────────────────────────────────
+
+const SEED_PROFILE: MacroTargets = {
+  target_kcal: 2100, target_protein_g: 180, target_carbs_g: 200, target_fat_g: 60, water_goal_ml: 2500,
+};
+
+export async function getProfile(): Promise<MacroTargets> {
+  if (USE_SEED) return SEED_PROFILE;
+  return apiFetch<MacroTargets>('/api/profile');
+}
+
+export async function updateProfile(targets: Partial<MacroTargets>): Promise<void> {
+  await apiFetch('/api/profile', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(targets),
+  });
+}
+
+export async function setWaterGoal(goal_ml: number): Promise<void> {
+  await apiFetch('/api/water', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ goal_ml }),
   });
 }

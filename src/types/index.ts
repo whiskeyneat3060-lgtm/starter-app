@@ -79,6 +79,34 @@ export interface DashboardData {
   activeGoal: Goal | null;
   rollups14: DailyRollup[];
   macroTargets: { kcal: number; protein_g: number; carbs_g: number; fat_g: number };
+  streak_days?: number;
+}
+
+export interface RecentFood {
+  description: string;
+  kcal: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fibre_g: number;
+  meal_bucket: string;
+}
+
+export interface TdeeData {
+  tdee: number | null;
+  avg_intake_kcal: number | null;
+  weight_change_kg: number | null;
+  window_days: number;
+  stable: boolean | null;
+  note?: string;
+}
+
+export interface MacroTargets {
+  target_kcal: number;
+  target_protein_g: number;
+  target_carbs_g: number;
+  target_fat_g: number;
+  water_goal_ml: number;
 }
 
 export interface FoodAnalyzeResult {

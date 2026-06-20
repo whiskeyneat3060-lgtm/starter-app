@@ -22,6 +22,19 @@ const SEED_WATER = {
   ],
 };
 
+// Adds water_goal_ml column to profiles if it doesn't exist (idempotent).
+async function ensureColumns(db: D1Database): Promise<void> {
+  try { await db.prepare(`ALTER TABLE profiles ADD COLUMN water_goal_ml INTEGER DEFAULT 2500`).run(); }
+  catch { /* column already exists */ }
+}
+
+async function getWaterGoal(db: D1Database): Promise<number> {
+  try {
+    const row = await db.prepare(`SELECT water_goal_ml FROM profiles WHERE user_id = 1`).first<{ water_goal_ml: number | null }>();
+    return row?.water_goal_ml ?? 2500;
+  } catch { return 2500; }
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   const method = context.request.method;
   const url = new URL(context.request.url);
@@ -33,14 +46,37 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       return new Response(JSON.stringify(SEED_WATER), { headers: { 'Content-Type': 'application/json' } });
     }
 
+    await ensureColumns(context.env.DB);
+
     const rows = await context.env.DB.prepare(
       `SELECT * FROM water_entries WHERE user_id = 1 AND date(logged_at) = ? ORDER BY logged_at ASC`
     ).bind(date).all<WaterEntry>();
 
     const entries = rows.results ?? [];
     const total_ml = entries.reduce((s, e) => s + e.ml, 0);
+    const goal_ml = await getWaterGoal(context.env.DB);
 
-    return new Response(JSON.stringify({ total_ml, goal_ml: 2500, entries }), { headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ total_ml, goal_ml, entries }), { headers: { 'Content-Type': 'application/json' } });
+  }
+
+  if (method === 'PUT') {
+    // Update the water goal.
+    let body: { goal_ml?: number };
+    try { body = await context.request.json(); }
+    catch { return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json' } }); }
+
+    if (!body.goal_ml || body.goal_ml <= 0) {
+      return new Response(JSON.stringify({ error: 'goal_ml must be positive' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (context.env?.DB) {
+      await ensureColumns(context.env.DB);
+      await context.env.DB.prepare(
+        `UPDATE profiles SET water_goal_ml = ? WHERE user_id = 1`
+      ).bind(body.goal_ml).run();
+    }
+
+    return new Response(JSON.stringify({ ok: true, goal_ml: body.goal_ml }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
   if (method === 'POST') {

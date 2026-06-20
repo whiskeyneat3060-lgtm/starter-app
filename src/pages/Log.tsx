@@ -4,6 +4,7 @@ import {
   getFoodEntries, adjustFoodEntry, logBurnManual, getBurnEntry,
   textLogFood, getCustomFoods, createCustomFood, getSavedMeals, createSavedMeal, nameSavedMeal,
   logWeight, getWeightEntries, getWater, logWater,
+  getRecentFoods, copyDay,
 } from '../lib/api';
 import { Card, CardLabel } from '../components/ui/Card';
 import { SkeletonCard } from '../components/ui/SkeletonCard';
@@ -88,6 +89,28 @@ export default function Log() {
   const { data: waterData } = useQuery({
     queryKey: ['water', today],
     queryFn: () => getWater(today),
+  });
+
+  const { data: recentFoods } = useQuery({
+    queryKey: ['recent-foods'],
+    queryFn: getRecentFoods,
+  });
+
+  const copyDayMutation = useMutation({
+    mutationFn: () => copyDay(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['food'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['recent-foods'] });
+    },
+  });
+
+  const logRecentMutation = useMutation({
+    mutationFn: (desc: string) => textLogFood(desc, getMealBucket()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['food'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
   });
 
   const logWaterMutation = useMutation({
@@ -272,6 +295,37 @@ export default function Log() {
             <p className="text-2xl font-black text-accent-energy">{fmt(totalProtein)}<span className="text-text-muted text-base font-normal">g</span></p>
           </div>
         </div>
+      </Card>
+
+      {/* Recents + copy yesterday */}
+      <Card>
+        <div className="flex items-center justify-between mb-2">
+          <CardLabel>Quick log</CardLabel>
+          <button
+            onClick={() => copyDayMutation.mutate()}
+            disabled={copyDayMutation.isPending}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-bg-elevated text-accent-energy border border-bg-border disabled:opacity-50"
+          >
+            {copyDayMutation.isPending ? 'Copying...' : 'Copy from yesterday'}
+          </button>
+        </div>
+        {recentFoods && recentFoods.length > 0 ? (
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+            {recentFoods.slice(0, 5).map((f, i) => (
+              <button
+                key={i}
+                onClick={() => logRecentMutation.mutate(f.description)}
+                disabled={logRecentMutation.isPending}
+                className="flex-shrink-0 px-3 py-2 rounded-xl bg-bg-elevated border border-bg-border text-left active:scale-95 transition-transform disabled:opacity-50"
+              >
+                <p className="text-text-primary text-xs font-medium max-w-[140px] truncate">{f.description}</p>
+                <p className="text-text-muted text-[10px]">{Math.round(f.kcal)} kcal · {Math.round(f.protein_g)}g P</p>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-text-muted text-sm">No recent foods yet</p>
+        )}
       </Card>
 
       {/* Text log input */}

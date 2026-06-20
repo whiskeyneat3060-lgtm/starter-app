@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getDashboard, getWater } from '../lib/api';
+import { getDashboard, getWater, getTdee } from '../lib/api';
 import { computeProjection } from '../lib/projection';
 import { Ring } from '../components/ui/Ring';
 import { MacroBar } from '../components/ui/MacroBar';
@@ -8,7 +8,7 @@ import { SparkLine } from '../components/ui/SparkLine';
 import { Card, CardLabel } from '../components/ui/Card';
 import { SkeletonCard } from '../components/ui/SkeletonCard';
 import { useNavigate } from 'react-router-dom';
-import { Footprints, Heart, Flame, TrendingDown } from 'lucide-react';
+import { Footprints, Heart, Flame, TrendingDown, Settings, Flame as FlameIcon, Activity } from 'lucide-react';
 
 function fmt(n: number, digits = 0) { return n.toLocaleString('nl-NL', { maximumFractionDigits: digits }); }
 
@@ -21,6 +21,7 @@ export default function Dashboard() {
   const todayDate = new Date().toISOString().slice(0, 10);
   const { data, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: getDashboard });
   const { data: waterData } = useQuery({ queryKey: ['water', todayDate], queryFn: () => getWater(todayDate) });
+  const { data: tdeeData } = useQuery({ queryKey: ['tdee'], queryFn: getTdee });
 
   if (isLoading || !data) {
     return (
@@ -33,6 +34,7 @@ export default function Dashboard() {
   }
 
   const { today, todayBurn, todayFood, latestInbody, activeGoal, rollups14, macroTargets } = data;
+  const streakDays = data.streak_days ?? 0;
 
   // Energy balance ring
   const intakeKcal = today?.intake_kcal ?? 0;
@@ -90,6 +92,26 @@ export default function Dashboard() {
 
   return (
     <div className="px-4 pt-6 pb-4 space-y-4 animate-fade-in max-w-lg mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-black text-primary tracking-tight">Recomp OS</h1>
+        <div className="flex items-center gap-2">
+          {streakDays > 0 && (
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-elevated border border-border">
+              <FlameIcon size={14} className="text-amber" />
+              <span className="text-primary text-xs font-bold">{streakDays}d</span>
+            </div>
+          )}
+          <button
+            onClick={() => navigate('/settings')}
+            className="p-2 rounded-full bg-elevated border border-border text-muted hover:text-primary transition-colors"
+            aria-label="Settings"
+          >
+            <Settings size={16} />
+          </button>
+        </div>
+      </div>
+
       {/* Hero — three rings */}
       <Card className="flex items-center justify-around py-6 flex-wrap gap-4">
         <Ring
@@ -161,6 +183,27 @@ export default function Dashboard() {
             ))}
           </div>
           <SparkLine data={sparkData} color="#00E5FF" height={36} />
+        </Card>
+      )}
+
+      {/* Adaptive TDEE card */}
+      {tdeeData?.tdee != null && (
+        <Card className="flex items-center justify-between">
+          <div>
+            <CardLabel>Est. TDEE</CardLabel>
+            <div className="flex items-baseline gap-1">
+              <span className="text-3xl font-black tracking-tighter-nums text-primary">{fmt(tdeeData.tdee)}</span>
+              <span className="text-muted text-sm">kcal/day</span>
+            </div>
+            <p className="text-muted text-xs mt-0.5">
+              {tdeeData.stable
+                ? 'Weight stable — eating at maintenance'
+                : `From ${tdeeData.window_days}d of intake + weight`}
+            </p>
+          </div>
+          <div className="w-11 h-11 rounded-full bg-elevated flex items-center justify-center">
+            <Activity size={18} className="text-energy" />
+          </div>
         </Card>
       )}
 

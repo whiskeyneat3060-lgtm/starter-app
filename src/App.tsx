@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Trends from './pages/Trends';
 import Goals from './pages/Goals';
 import Log from './pages/Log';
+import Settings from './pages/Settings';
 import { BottomNav } from './components/layout/BottomNav';
 import { FAB } from './components/layout/FAB';
 
@@ -45,6 +46,7 @@ export default function App() {
                   <Route path="/trends" element={<Trends />} />
                   <Route path="/goals" element={<Goals />} />
                   <Route path="/log" element={<Log />} />
+                  <Route path="/settings" element={<Settings />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
                 <FAB />
