@@ -29,7 +29,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     await context.env.DB.prepare(
       `INSERT INTO burn_entries (user_id, date, total_kcal, active_kcal, resting_kcal, steps, resting_hr, source)
        VALUES (1, ?, ?, ?, ?, ?, ?, 'garmin')
-       ON CONFLICT DO UPDATE SET
+       ON CONFLICT(user_id, date) DO UPDATE SET
          total_kcal = excluded.total_kcal,
          active_kcal = excluded.active_kcal,
          resting_kcal = excluded.resting_kcal,
